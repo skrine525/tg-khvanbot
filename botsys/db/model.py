@@ -2,7 +2,7 @@ from sqlalchemy import Column, ForeignKey, SmallInteger, Integer, BigInteger, St
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.orm.session import Session
 from sqlalchemy.engine import Engine
-import datetime
+import datetime, uuid
 
 
 # Статический класс для доступа к движку БД
@@ -25,16 +25,16 @@ class KeyboardButton(Database.Base):
     __tablename__ = 'system_keyboard_buttons'
 
     # Столбцы
-    id = Column(UUID, primary_key=True)
+    button_id = Column(UUID, primary_key=True, default=uuid.uuid4)
     data = Column(JSON, nullable=False)
 
     # Конструктор
-    def __init__(self, data: str):
+    def __init__(self, data: dict):
         self.data = data
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<KeyboardButton('{self.id}')>"
+        return f"<KeyboardButton('{self.button_id}')>"
 
 
 # Пользователь
@@ -42,12 +42,13 @@ class User(Database.Base):
     __tablename__ = 'users'
 
     # Столбцы
-    id = Column(BigInteger, primary_key=True)                               # Числовой идентификатор
-    tg_user_id = Column(BigInteger, unique=True)                            # Идентификатор аккаунта Telegram
-    first_name = Column(VARCHAR(20), default="")                            # Имя пользователя
-    last_name = Column(VARCHAR(20), default="")                             # Фамилия пользователя
-    middle_name = Column(VARCHAR(20), default="")                           # Отчество пользователя
-    is_deactivated = Column(Boolean, nullable=False, default=False)         # Статус деактивации аккаунта
+    user_id = Column(BigInteger, primary_key=True)                                          # Числовой идентификатор
+    tg_user_id = Column(BigInteger, unique=True)                                            # Идентификатор аккаунта Telegram
+    first_name = Column(VARCHAR(20), default="")                                            # Имя пользователя
+    last_name = Column(VARCHAR(20), default="")                                             # Фамилия пользователя
+    middle_name = Column(VARCHAR(20), default="")                                           # Отчество пользователя
+    register_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
+    is_deactivated = Column(Boolean, nullable=False, default=False)                         # Статус деактивации аккаунта
 
     # Отношения
     role = relationship('UserRole', backref='user', uselist=False)
@@ -58,7 +59,7 @@ class User(Database.Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<User({self.id}, {self.tg_user_id})>"
+        return f"<User({self.user_id}, {self.tg_user_id})>"
     
 
 # Специальные роли
@@ -71,10 +72,9 @@ class UserRole(Database.Base):
     ROLE_ADMIN = 'a'
 
     # Столбцы
-    id = Column(BigInteger, primary_key=True)                               # Числовой идентификатор
-    user_id = Column(BigInteger, ForeignKey("users.id"), unique=True)       # Идентификатор пользователя
-    role = Column(VARCHAR(1), nullable=False)                               # Роль пользователя
-    timestamp = Column(TIMESTAMP, default=datetime.datetime.utcnow)         # Временная метка назначения роли
+    user_id = Column(BigInteger, ForeignKey("users.user_id"), primary_key=True)             # Идентификатор пользователя
+    role = Column(VARCHAR(1), nullable=False)                                               # Роль пользователя
+    acquisition_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)  # Временная метка получения роли
 
     # Конструктор
     def __init__(self, user_id: int, role: str):
@@ -83,7 +83,7 @@ class UserRole(Database.Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<UserRole({self.id}, {self.user_id}, '{self.role}')>"
+        return f"<UserRole({self.user_id}, '{self.role}')>"
     
     # Проверка пользователя на роль Менеджер
     def is_manager(self):
@@ -96,3 +96,34 @@ class UserRole(Database.Base):
     # Проверка пользователя на роль Администратор
     def is_admin(self):
         return (self.role == UserRole.ROLE_ADMIN)
+
+
+# Записи на консультацию
+class Сonsultation(Database.Base):
+    __tablename__ = 'consultations'
+
+    # Столбцы
+    consultation_id = Column(BigInteger, primary_key=True)                                  # Идентификатор консультации
+    user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False)               # Идентификатор пользователя
+    creation_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время создания записи на консультацию
+    is_processed = Column(Boolean, nullable=False, default=False)                           # Статус консультации
+    answer_phone_number = Column(VARCHAR(20), nullable=False)                               # Ответ на вопрос "Номер телефона"
+    answer_lang_level = Column(VARCHAR(50), nullable=False)                                 # Ответ на вопрос "Уровень языка"
+    answer_hsk_exam = Column(VARCHAR(100), nullable=False)                                  # Ответ на вопрос "Экзамен HSK"
+    answer_purpose = Column(VARCHAR(100), nullable=False)                                   # Ответ на вопрос "Цель изучения"
+    answer_way_now = Column(VARCHAR(50), nullable=False)                                    # Ответ на вопрос "Способ изучения сейчас"
+    consultation_time = Column(TIMESTAMP, nullable=False)                                   # Удобное время консультации
+
+    # Конструктор
+    def __init__(self, user_id: int, answer_phone_number:str, answer_lang_level: str, answer_hsk_exam: str, answer_purpose: str, answer_way_now: str, consultation_time: datetime.datetime):
+        self.user_id = user_id
+        self.answer_phone_number = answer_phone_number
+        self.answer_lang_level = answer_lang_level
+        self.answer_hsk_exam = answer_hsk_exam
+        self.answer_purpose = answer_purpose
+        self.answer_way_now = answer_way_now
+        self.consultation_time = consultation_time
+
+    # Преобразование в строку
+    def __repr__(self):
+        return f"<Сonsultation({self.consultation_id}, {self.user_id})>"

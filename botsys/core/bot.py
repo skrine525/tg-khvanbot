@@ -2,13 +2,19 @@ import telebot, json
 from typing import Callable
 from botsys.core import strcontent
 from botsys.db.model import Session, Database, KeyboardButton
+from botsys.db.behavior import get_keyboard_button_data
 
 
 # Билдер callack данных для кнопок
-class ButtonDataBuilder:
+class KeyboardButtonDataBuilder:
     # Конструктор
-    def __init__(self):
-        self.db_session = Database.make_session()
+    def __init__(self, session: Session = None):
+        if session is None:
+            self.__db_session = Database.make_session()
+            self.__is_internal_session = True
+        else:
+            self.__db_session = session
+            self.__is_internal_session = False
 
     def __enter__(self):
         return self
@@ -16,32 +22,20 @@ class ButtonDataBuilder:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-    # Метод генерации данных
-    def make(self, command: str, **kwargs):
-        rdata = {'c': command}              # Данные, отправляеммые в саму кнопку
-        data = {}                           # Данные, отправляемые в БД
+    # Метод записи данных в БД и генерации уникального ID данных
+    def set_callback_data(self, command: str, **kwargs) -> str:
+        kwargs['command'] = command
 
-        # Формируем данные из kwargs
-        for i in kwargs:
-            if i == 'allowed_user_id':
-                rdata['u'] = kwargs['allowed_user_id']
-            else:
-                data[i] = kwargs[i]
+        button = KeyboardButton(kwargs)
+        self.__db_session.add(button)
+        self.__db_session.commit()
 
-        # Добавляем данные в БД
-        if(len(data) > 0):
-            button_data = KeyboardButton(json.dumps(data, separators=(',', ':')))
-            self.db_session.add(button_data)
-            self.db_session.commit()
-
-            # Формируем данные для самой кнопки
-            rdata['d'] = button_data.id
-        
-        return json.dumps(rdata,  separators=(',', ':'))
+        return str(button.button_id)
 
     # Метод закрытия билдера
     def close(self):
-        self.db_session.close()
+        if self.__is_internal_session:
+            self.__db_session.close()
 
 
 # Базовый класс, хранящий ифномарцию о команде
@@ -123,13 +117,13 @@ class Bot(telebot.TeleBot):
 
     # Обработчик callback запросов
     def __callback_query_handler(self, call: telebot.types.CallbackQuery):
-        callback_data = json.loads(call.data)
+        callback_data = get_keyboard_button_data(call.data)
 
         for command_info in self.__callback_query_commands:
-            if callback_data['c'] == command_info.command:
+            if callback_data['command'] == command_info.command:
                 # Проверка пользователя на доступ к кнопке
                 try:
-                    if callback_data["u"] != call.from_user.id:
+                    if callback_data["allowed_user_id"] != call.from_user.id:
                         self.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_DO_NOT_HAVE_ACCESS_TO_THIS_MENU, True)
                         return
                 except KeyError:
@@ -216,10 +210,7 @@ class Bot(telebot.TeleBot):
         self.set_my_commands(bot_commands)
 
     # Устанавливает следущее шаговое действие
-    def register_next_step_action(self, message: telebot.types.Message, callback: Callable, *args, **kwargs):
-        chat_id = message.chat.id
-        user_id = message.from_user.id
-
+    def register_next_step_action(self, chat_id: int, user_id: int, callback: Callable, *args, **kwargs):
         self.__step_actions.append(StepAction(chat_id, user_id, callback, *args, **kwargs))
 
     # Очищает шаговое действие

@@ -14,18 +14,18 @@ def check_user(session: Session, user: User, tg_user_id: int) -> User:
 
 
 # Возвращает данные кнопки клавиатуры из таблицы БД
-def get_keyboard_button_data(data_id: int, session: Session = None) -> dict:
+def get_keyboard_button_data(data_id: str, session: Session = None) -> dict:
     if session is None:
         session = Database.make_session()
-        button_data = session.query(KeyboardButton).filter_by(id=data_id).first()
+        button = session.query(KeyboardButton).filter_by(button_id=data_id).first()
         session.close()
-        if button_data is None:
+        if button is None:
             return {}
         else:
-            return json.loads(button_data.data)
+            return button.data
     else:
-        button_data = session.query(KeyboardButton).filter_by(id=data_id).first()
-        if button_data is None:
+        button = session.query(KeyboardButton).filter_by(button_id=data_id).first()
+        if button is None:
             return {}
         else:
-            return json.loads(button_data.data)
+            return button.data
