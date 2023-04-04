@@ -4,8 +4,6 @@ import random, string, os, json
 class SystemPaths:
     # Директории
     ROOT_DIR = os.getcwd()
-    #TMP_DIR = os.path.join(ROOT_DIR, 'tmp')
-    #SRC_DIR = os.path.join(ROOT_DIR, 'src')
 
 # Генерация случайной строки
 def generate_random_string(length, uppercase=True, lowercase=True, numbers=True):
@@ -20,6 +18,22 @@ def generate_random_string(length, uppercase=True, lowercase=True, numbers=True)
         letters += '0123456789'
 
     return ''.join(random.choice(letters) for _ in range(length))
+
+# Генерация списка рядов для клавиатур
+def get_keyboard_row_list(buttons: list, row_width: int = 3):
+    rows = []
+    curr_index = 0
+    curr_row_button_count = 0
+    for i in buttons:
+        curr_row_button_count += 1
+        if curr_row_button_count > row_width:
+            curr_row_button_count = 1
+            curr_index += 1
+        try:
+            rows[curr_index].append(i)
+        except IndexError:
+            rows.append([i])
+    return rows
 
 # Функция инициализации системных директорий
 def initdir():

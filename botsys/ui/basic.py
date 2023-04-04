@@ -1,5 +1,6 @@
 import telebot
 from botsys.core import strcontent
+from botsys.core.system import get_keyboard_row_list
 from botsys.core.bot import Bot, KeyboardButtonDataBuilder
 from botsys.db.model import Database, User, KeyboardButton
 from botsys.db.behavior import check_user
@@ -62,6 +63,15 @@ def registation(bot: Bot, message: telebot.types.Message, stage, reg_data):
 class MenuCommand:
     @staticmethod
     def message_command(bot: Bot, message: telebot.types.Message):
+        # База данных
+        session = Database.make_session()
+        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+        session.close()
+
+        if db_user is None:
+            bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
+            return
+
         markup = telebot.types.InlineKeyboardMarkup()
 
         with KeyboardButtonDataBuilder() as callback_data_builder:
@@ -74,6 +84,15 @@ class MenuCommand:
 class ConsultationCommand:
     @staticmethod
     def callback_query_command(bot: Bot, call: telebot.types.CallbackQuery, callback_data: dict):
+        # База данных
+        session = Database.make_session()
+        db_user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
+        session.close()
+
+        if db_user is None:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION, show_alert=True)
+            return
+
         stage = callback_data.get("stage", 1)
         data = callback_data.get("data", {})
         if stage == 1:
@@ -89,23 +108,20 @@ class ConsultationCommand:
 
     @staticmethod
     def get_phone_number(bot: Bot, message: telebot.types.Message, data, is_manual_input = False):
+        # База данных
+        session = Database.make_session()
+        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+        session.close()
+
+        if db_user is None:
+            bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
+            return
+
         if message.content_type == 'contact':
             data["phone_number"] = message.contact.phone_number
-            markup = telebot.types.ReplyKeyboardMarkup()
-            markup.row(
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK1),
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK2),
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK3)
-            )
-            markup.row(
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK4),
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK5),
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK6)
-            )
-            markup.row(
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_ZERO),
-                telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_IDK)
-            )
+            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+            for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
+                markup.row(*row)
             markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
             bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
@@ -124,20 +140,8 @@ class ConsultationCommand:
                     if len(message.text) <= 10 and ConsultationCommand.__validate_phone_number(message.text):
                         data["phone_number"] = f"7{message.text}"
                         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                        markup.row(
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK1),
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK2),
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK3)
-                        )
-                        markup.row(
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK4),
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK5),
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_HSK6)
-                        )
-                        markup.row(
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_ZERO),
-                            telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_ANSWER_IDK)
-                        )
+                        for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
+                            markup.row(*row)
                         markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                         bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
                         bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
@@ -153,7 +157,66 @@ class ConsultationCommand:
 
     @staticmethod
     def get_answers_to_survey(bot: Bot, message: telebot.types.Message, data, q):
-        pass
+        # База данных
+        session = Database.make_session()
+        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+        session.close()
+
+        if db_user is None:
+            bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
+            return
+        
+        if message.text == strcontent.BUTTON_CANCEL:
+            markup = telebot.types.ReplyKeyboardRemove()
+            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CANCELED, reply_markup=markup)
+        elif q == 1:
+            if message.text in ConsultationCommand.__get_answers(1):
+                data["lang_level"] = message.text
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_3, reply_markup=markup)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=2)
+            else:
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
+                    markup.row(*row)
+                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
+        elif q == 2:
+            if len(message.text) <= 100:
+                data['hsk_exam'] = message.text
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_4)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=3)
+            else:
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=2)
+        elif q == 3:
+            if len(message.text) <= 100:
+                data['purpose'] = message.text
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
+                    markup.row(*row)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=4)
+            else:
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=3)
+        elif q == 4:
+            if message.text in ConsultationCommand.__get_answers(2):
+                data['way_now'] = message.text
+                markup = telebot.types.ReplyKeyboardRemove()
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_6, reply_markup=markup)
+                bot.send_message(message.chat.id, str(data))
+            else:
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
+                    markup.row(*row)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=4)
+        else:
+            markup = telebot.types.ReplyKeyboardRemove()
+            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CREATION_ERROR, reply_markup=markup)
 
     @staticmethod
     def __validate_phone_number(phone_number: str) -> bool:
@@ -164,3 +227,21 @@ class ConsultationCommand:
                 is_correct = False
                 break
         return is_correct
+    
+    @staticmethod
+    def __get_answers(q: int):
+        if q == 1:
+            return [
+                strcontent.BUTTON_CONSULTATION_ANSWER_HSK1, strcontent.BUTTON_CONSULTATION_ANSWER_HSK2,
+                strcontent.BUTTON_CONSULTATION_ANSWER_HSK3, strcontent.BUTTON_CONSULTATION_ANSWER_HSK4,
+                strcontent.BUTTON_CONSULTATION_ANSWER_HSK5, strcontent.BUTTON_CONSULTATION_ANSWER_HSK6,
+                strcontent.BUTTON_CONSULTATION_ANSWER_ZERO, strcontent.BUTTON_CONSULTATION_ANSWER_IDK
+            ]
+        elif q == 2:
+            return [
+                strcontent.BUTTON_CONSULTATION_ANSWER_NO_HOW, strcontent.BUTTON_CONSULTATION_ANSWER_ONLINE_СOURSES,
+                strcontent.BUTTON_CONSULTATION_ANSWER_ONLINE_TEACHER, strcontent.BUTTON_CONSULTATION_ANSWER_OFFLINE_TEACHER,
+                strcontent.BUTTON_CONSULTATION_ANSWER_GROUP_LESSONS, strcontent.BUTTON_CONSULTATION_ANSWER_INDEPENDENTLY
+            ]
+        else:
+            return []
