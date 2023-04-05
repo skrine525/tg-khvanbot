@@ -1,4 +1,4 @@
-import telebot, json
+import telebot
 from typing import Callable
 from botsys.core import strcontent
 from botsys.core.system import generate_random_string
@@ -219,14 +219,14 @@ class InlineKeyboardDataBuilder:
         self.__db_buttons.append(button)
 
     # Принимает данные, фиксирует в сущности KeyboardButton и возвращает button_id
-    def make_single_callback_data(self, **kwargs):
+    def build_single_callback_data(self, **kwargs):
         button = KeyboardButton(kwargs, self.__bot.get_inline_keyboard_token())
         self.__db_session.add(button)
         self.__db_session.commit()
         return str(button.button_id)
         
     # Фиксирует данные в сущности KeyboardButton и возвращает список button_id
-    def make(self) -> list:
+    def build(self) -> list:
         self.__db_session.commit()
         ids = []
         for button in self.__db_buttons:

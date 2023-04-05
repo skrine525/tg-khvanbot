@@ -24,13 +24,19 @@ MESSAGE_CONSULTATION_CANCELED = "✅ Создание заявки на конс
 MESSAGE_CONSULTATION_TELL_PHONE_NUMBER = "Укажите номер телефона без кода +7."
 MESSAGE_CONSULTATION_CREATION_ERROR = "⛔️ Произошла ошибка. Попробуйте еще раз записаться на консультацию."
 MESSAGE_CONSULTATION_TOO_LONG_ANSWER = "⛔️ Ответ содержит более 100 символов. Пожалуйста, напишите ответ короче."
-MESSAGE_CONSULTATION_SELECT_TIME = "🗓 Выберите время."
+MESSAGE_CONSULTATION_SELECT_TIME_1 = "🗓 Выберите удобное время консультации."
+MESSAGE_CONSULTATION_SELECT_TIME_2 = "🗓 Выберите дату."
+MESSAGE_CONSULTATION_SELECT_TIME_3 = "📅 *Дата*: {date}\n\n🗓 Выберите время\\."
+MESSAGE_CONSULTATION_CONFIRMATION = "👤 *Имя*: {user_name}\n☎️ *Телефон*: {phone_number}\n📅 *Дата*: {date}\n⏰ *Время*: {time}\n\n📝 *Ответы на вопросы*:\n\n*В*: Какой у вас уровень китайского языка?\n*О*: {lang_level}\n\n*В*: Планируете сдавать экзамен HSK? \\(Если да, то когда и какой уровень хотели бы сдать?\\)\n*О*: {hsk_exam}\n\n*В*: Какая цель на китайский язык сейчас?\n*О*: {purpose}\n\n*В*: Как Вы сейчас изучаете язык?\n*О*: {way_now}"
+MESSAGE_CONSULTATION_SENT = "✅ Консультация №{consultation_id} запрошена. С вами свяжуться в указанное время."
 
 NOTIFICATION_UNKNOWN_COMMAND = "⛔️ Неизвестная команда."
 NOTIFICATION_YOU_DO_NOT_HAVE_ACCESS_TO_THIS_MENU = "⛔️ У вас нет доступа к этому меню."
 NOTIFICATION_NEED_REGISTRATION = "⛔️ Для начала необходимо зарегистрироваться."
+NOTIFICATION_YOU_HAVE_ALREADY_ACTIVE_CONSULTATION = "⛔️ Вы уже создали запрос на консультацию. С вами должны связаться в указанное время."
 
-BUTTON_CANCEL = "Отменить"
+BUTTON_CANCEL = "❌ Отменить"
+BUTTON_CONFIRM = "✅ Подтвердить"
 BUTTON_TIMEZONE_MSC_M1 = "МСК-1"
 BUTTON_TIMEZONE_MSC = "МСК"
 BUTTON_TIMEZONE_MSC_P1 = "МСК+1"
@@ -59,7 +65,8 @@ BUTTON_CONSULTATION_ANSWER_ONLINE_TEACHER = "Онлайн с репетитор�
 BUTTON_CONSULTATION_ANSWER_OFFLINE_TEACHER = "Репетитор в жизни"
 BUTTON_CONSULTATION_ANSWER_GROUP_LESSONS = "Групповые занятия"
 BUTTON_CONSULTATION_ANSWER_INDEPENDENTLY = "Самостоятельно"
-BUTTON_CONSULTATION_SELECT_TIME = "🗓Выбрать время"
+BUTTON_CONSULTATION_SELECT_TIME = "🗓 Выбрать время"
+BUTTON_CONSULTATION_CHANGE_TIME = "🗓 Изменить время"
 
 TEXT_DESCRIPTION_MENU_COMMAND = "Открывает меню"
 

@@ -55,6 +55,7 @@ class User(Database.Base):
 
     # Отношения
     role = relationship('UserRole', backref='user', uselist=False)
+    consultation = relationship('Сonsultation', backref='user', uselist=True)
 
     # Конструктор
     def __init__(self, tg_user_id: int):
@@ -110,21 +111,21 @@ class Сonsultation(Database.Base):
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False)               # Идентификатор пользователя
     creation_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время создания записи на консультацию
     is_processed = Column(Boolean, nullable=False, default=False)                           # Статус консультации
-    answer_phone_number = Column(VARCHAR(20), nullable=False)                               # Ответ на вопрос "Номер телефона"
-    answer_lang_level = Column(VARCHAR(50), nullable=False)                                 # Ответ на вопрос "Уровень языка"
-    answer_hsk_exam = Column(VARCHAR(100), nullable=False)                                  # Ответ на вопрос "Экзамен HSK"
-    answer_purpose = Column(VARCHAR(100), nullable=False)                                   # Ответ на вопрос "Цель изучения"
-    answer_way_now = Column(VARCHAR(50), nullable=False)                                    # Ответ на вопрос "Способ изучения сейчас"
+    phone_number = Column(VARCHAR(20), nullable=False)                               # Ответ на вопрос "Номер телефона"
+    lang_level = Column(VARCHAR(50), nullable=False)                                 # Ответ на вопрос "Уровень языка"
+    hsk_exam = Column(VARCHAR(100), nullable=False)                                  # Ответ на вопрос "Экзамен HSK"
+    purpose = Column(VARCHAR(100), nullable=False)                                   # Ответ на вопрос "Цель изучения"
+    way_now = Column(VARCHAR(50), nullable=False)                                    # Ответ на вопрос "Способ изучения сейчас"
     consultation_time = Column(TIMESTAMP, nullable=False)                                   # Удобное время консультации
 
     # Конструктор
-    def __init__(self, user_id: int, answer_phone_number:str, answer_lang_level: str, answer_hsk_exam: str, answer_purpose: str, answer_way_now: str, consultation_time: datetime.datetime):
+    def __init__(self, user_id: int, phone_number:str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
         self.user_id = user_id
-        self.answer_phone_number = answer_phone_number
-        self.answer_lang_level = answer_lang_level
-        self.answer_hsk_exam = answer_hsk_exam
-        self.answer_purpose = answer_purpose
-        self.answer_way_now = answer_way_now
+        self.phone_number = phone_number
+        self.lang_level = lang_level
+        self.hsk_exam = hsk_exam
+        self.purpose = purpose
+        self.way_now = way_now
         self.consultation_time = consultation_time
 
     # Преобразование в строку

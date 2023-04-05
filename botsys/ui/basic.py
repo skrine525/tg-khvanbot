@@ -1,8 +1,8 @@
 import telebot, datetime
 from botsys.core import strcontent
-from botsys.core.system import get_keyboard_row_list
+from botsys.core.system import get_keyboard_row_list, escape_markdownv2_text
 from botsys.core.bot import Bot, InlineKeyboardDataBuilder
-from botsys.db.model import Database, User
+from botsys.db.model import Database, User, Сonsultation
 
 
 def start_message_command(bot: Bot, message: telebot.types.Message):
@@ -96,7 +96,7 @@ def registation(bot: Bot, message: telebot.types.Message, stage, reg_data):
             
             inline_markup = telebot.types.InlineKeyboardMarkup()
             keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
-            callback_data = keyboard_data_builder.make_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
+            callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
             inline_markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION, callback_data=callback_data))
             session.close()
 
@@ -125,7 +125,7 @@ class MenuCommand:
 
         markup = telebot.types.InlineKeyboardMarkup()
         keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
-        callback_data = keyboard_data_builder.make_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
+        callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
         markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION, callback_data=callback_data))
         session.close()
         
@@ -138,15 +138,21 @@ class ConsultationCommand:
         # База данных
         session = Database.make_session()
         db_user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
-        session.close()
 
         if db_user is None:
             bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION, show_alert=True)
             return
+        elif len(db_user.consultation) > 0:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_ALREADY_ACTIVE_CONSULTATION, show_alert=True)
+            return
 
         stage = callback_data.get("stage", 1)
-        data = callback_data.get("data", {})
-        if stage == 1:
+        form = callback_data.get("form", {})
+        if stage < 0:
+            session.close()
+            bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_CANCELED, call.message.chat.id, call.message.id)
+        elif stage == 1:
+            session.close()
             inline_markup = telebot.types.InlineKeyboardMarkup()
             bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=inline_markup)
             
@@ -155,16 +161,160 @@ class ConsultationCommand:
             markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER))
             markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
             bot.send_message(call.message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_1, reply_markup=markup)
-            bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, data=data)
+            bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, form=form)
         elif stage == 2:
-            ConsultationCommand.select_time(bot, call, callback_data)
+            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
+
+            utc_time = datetime.datetime.utcnow()
+            interval = datetime.timedelta(days=1)
+
+            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
+            button_text = []
+
+            for i in range(7):
+                utc_time = utc_time + interval
+                display_time = utc_time + tz_timedelta
+
+                callback_data = {
+                    "command": callback_data["command"],
+                    "stage": 3,
+                    "form": callback_data["form"],
+                    "time": {"d": utc_time.day, "m": utc_time.month, "y": utc_time.year}
+                }
+                callback_data_builder.add_callback_data(**callback_data)
+
+                date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
+                date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
+                button_text.append(date_text)
+            callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
+            button_ids = callback_data_builder.build()
+            session.close()
+
+            buttons = []
+            for i in range(len(button_text)):
+                buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
+
+            markup = telebot.types.InlineKeyboardMarkup()
+            for row in get_keyboard_row_list(buttons):
+                markup.row(*row)
+            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
+
+            bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_2, call.message.chat.id, call.message.id, reply_markup=markup)
+        elif stage == 3:
+            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
+
+            utc_time = datetime.datetime(
+                year=callback_data["time"]["y"], month=callback_data["time"]["m"],
+                day=callback_data["time"]["d"], hour=8, minute=0, second=0, microsecond=0
+            )
+            interval = datetime.timedelta(minutes=30)
+
+            display_time = utc_time + tz_timedelta
+            date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
+            date_text = f"{date_text}\\.0{display_time.month}" if display_time.month < 10 else f"{date_text}\\.{display_time.month}"
+
+            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
+            button_text = []
+
+            for i in range(12):
+                display_time = utc_time + tz_timedelta
+
+                callback_data = {
+                    "command": callback_data["command"],
+                    "stage": 4,
+                    "form": callback_data["form"],
+                    "time": {
+                        "d": callback_data["time"]["d"],
+                        "m": callback_data["time"]["m"],
+                        "y": callback_data["time"]["y"],
+                        "h": utc_time.hour,
+                        "mn": utc_time.minute
+                    }
+                }
+                callback_data_builder.add_callback_data(**callback_data)
+
+                time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
+                time_text = f"{time_text}:0{display_time.minute}" if display_time.minute < 10 else f"{time_text}:{display_time.minute}"
+                button_text.append(time_text)
+
+                utc_time = utc_time + interval
+            callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
+            button_ids = callback_data_builder.build()
+            session.close()
+
+            buttons = []
+            for i in range(len(button_text)):
+                buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
+
+            markup = telebot.types.InlineKeyboardMarkup()
+            for row in get_keyboard_row_list(buttons):
+                markup.row(*row)
+            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
+
+            bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_3.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
+        elif stage == 4:
+            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
+
+            utc_time = datetime.datetime(
+                year=callback_data["time"]["y"], month=callback_data["time"]["m"],
+                day=callback_data["time"]["d"], hour=callback_data["time"]["h"],
+                minute=callback_data["time"]["mn"], second=0, microsecond=0
+            )
+
+            display_time = utc_time + tz_timedelta
+            date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
+            date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
+            time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
+            time_text = f"{time_text}:0{display_time.minute}" if display_time.minute < 10 else f"{time_text}:{display_time.minute}"
+
+            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
+            callback_data_builder.add_callback_data(
+                command=callback_data["command"], stage=5,
+                form=callback_data["form"], time=callback_data["time"]
+            )
+            callback_data_builder.add_callback_data(
+                command=callback_data["command"], stage=2,
+                form=callback_data["form"]
+            )
+            callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
+            button_ids = callback_data_builder.build()
+
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONFIRM, callback_data=button_ids[0]))
+            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONSULTATION_CHANGE_TIME, callback_data=button_ids[1]))
+            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[2]))
+            
+            user_name = f"{db_user.first_name} {db_user.last_name}"
+            session.close()
+
+            embedded_text_list = {'date': date_text, 'time': time_text, 'user_name': user_name}
+            embedded_text_list = {**embedded_text_list, **callback_data["form"]}
+            for i in embedded_text_list:
+                embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
+
+            text = strcontent.MESSAGE_CONSULTATION_CONFIRMATION.format(**embedded_text_list)
+            bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
+        elif stage == 5:
+            consultation_time = datetime.datetime(
+                year=callback_data["time"]["y"], month=callback_data["time"]["m"],
+                day=callback_data["time"]["d"], hour=callback_data["time"]["h"],
+                minute=callback_data["time"]["mn"], second=0, microsecond=0
+            )
+            db_consultation = Сonsultation(
+                db_user.user_id, callback_data["form"]["phone_number"],
+                callback_data["form"]["lang_level"], callback_data["form"]["hsk_exam"],
+                callback_data["form"]["purpose"], callback_data["form"]["way_now"], consultation_time
+            )
+
+            session.add(db_consultation)
+            session.commit()
+
+            text = strcontent.MESSAGE_CONSULTATION_SENT.format(consultation_id=db_consultation.consultation_id)
+            bot.edit_message_text(text, call.message.chat.id, call.message.id)
+
 
     @staticmethod
-    def select_time(bot: Bot, call: telebot.types.CallbackQuery, callback_data: dict):
-        now = datetime.datetime.utcnow()
-
-    @staticmethod
-    def get_phone_number(bot: Bot, message: telebot.types.Message, data, is_manual_input = False):
+    def get_phone_number(bot: Bot, message: telebot.types.Message, form, is_manual_input = False):
         # База данных
         session = Database.make_session()
         db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
@@ -175,45 +325,45 @@ class ConsultationCommand:
             return
 
         if message.content_type == 'contact':
-            data["phone_number"] = message.contact.phone_number
+            form["phone_number"] = message.contact.phone_number
             markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
             for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                 markup.row(*row)
             markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
-            bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
+            bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif message.content_type == 'text':
             if message.text == strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
                 markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, data=data, is_manual_input=True)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form, is_manual_input=True)
             elif message.text == strcontent.BUTTON_CANCEL:
                 markup = telebot.types.ReplyKeyboardRemove()
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CANCELED, reply_markup=markup)
             else:
                 if is_manual_input:
                     if len(message.text) <= 10 and ConsultationCommand.__validate_phone_number(message.text):
-                        data["phone_number"] = f"7{message.text}"
+                        form["phone_number"] = f"7{message.text}"
                         markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                         for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                             markup.row(*row)
                         markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                         bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
-                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
+                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
                     else:
                         bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER)
-                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, data=data, is_manual_input=True)
+                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form, is_manual_input=True)
                 else:
                     bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_HELP_1)
-                    bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, data=data)
+                    bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
         else:
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_HELP_1)
-            bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, data=data)
+            bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
 
     @staticmethod
-    def get_answers_to_survey(bot: Bot, message: telebot.types.Message, data, q):
+    def get_answers_to_survey(bot: Bot, message: telebot.types.Message, form, q):
         # База данных
         session = Database.make_session()
         db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
@@ -228,55 +378,55 @@ class ConsultationCommand:
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CANCELED, reply_markup=markup)
         elif q == 1:
             if message.text in ConsultationCommand.__get_answers(1):
-                data["lang_level"] = message.text
+                form["lang_level"] = message.text
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_3, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=2)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=2)
             else:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                     markup.row(*row)
                 markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=1)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif q == 2:
             if len(message.text) <= 100:
-                data['hsk_exam'] = message.text
+                form['hsk_exam'] = message.text
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_4)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=3)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=3)
             else:
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=2)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=2)
         elif q == 3:
             if len(message.text) <= 100:
-                data['purpose'] = message.text
+                form['purpose'] = message.text
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
                     markup.row(*row)
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=4)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=4)
             else:
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=3)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=3)
         elif q == 4:
             if message.text in ConsultationCommand.__get_answers(2):
-                data['way_now'] = message.text
+                form['way_now'] = message.text
                 markup = telebot.types.ReplyKeyboardRemove()
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_6 + f"\n\n{data}", reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_6, reply_markup=markup)
                 markup = telebot.types.InlineKeyboardMarkup()
                 keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
-                callback_data = keyboard_data_builder.make_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, data=data, stage=2)
+                callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, stage=2, form=form)
                 markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION_SELECT_TIME, callback_data=callback_data))
                 session.close()
                 
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_SELECT_TIME, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_SELECT_TIME_1, reply_markup=markup)
             else:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
                     markup.row(*row)
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, data=data, q=4)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=4)
         else:
             markup = telebot.types.ReplyKeyboardRemove()
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CREATION_ERROR, reply_markup=markup)

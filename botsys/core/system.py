@@ -35,6 +35,17 @@ def get_keyboard_row_list(buttons: list, row_width: int = 3):
             rows.append([i])
     return rows
 
+# Экранирует символы MarkdownV2
+def escape_markdownv2_text(text:str):
+    characters = ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    escaped_text = ""
+    for i in list(text):
+        if i in characters:
+            escaped_text += f"\\{i}"
+        else:
+            escaped_text += i
+    return escaped_text
+
 # Функция инициализации системных директорий
 def initdir():
     # tmp/
