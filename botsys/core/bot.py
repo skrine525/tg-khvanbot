@@ -1,41 +1,8 @@
 import telebot, json
 from typing import Callable
 from botsys.core import strcontent
+from botsys.core.system import generate_random_string
 from botsys.db.model import Session, Database, KeyboardButton
-from botsys.db.behavior import get_keyboard_button_data
-
-
-# Билдер callack данных для кнопок
-class KeyboardButtonDataBuilder:
-    # Конструктор
-    def __init__(self, session: Session = None):
-        if session is None:
-            self.__db_session = Database.make_session()
-            self.__is_internal_session = True
-        else:
-            self.__db_session = session
-            self.__is_internal_session = False
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
-
-    # Метод записи данных в БД и генерации уникального ID данных
-    def set_callback_data(self, command: str, **kwargs) -> str:
-        kwargs['command'] = command
-
-        button = KeyboardButton(kwargs)
-        self.__db_session.add(button)
-        self.__db_session.commit()
-
-        return str(button.button_id)
-
-    # Метод закрытия билдера
-    def close(self):
-        if self.__is_internal_session:
-            self.__db_session.close()
 
 
 # Базовый класс, хранящий ифномарцию о команде
@@ -74,6 +41,9 @@ class Bot(telebot.TeleBot):
         self.__callback_query_commands: list = []       # Инициализация списка команд callback запросов
         self.__inline_query_commands: list = []         # Инициализация списка команд inline запросов
         self.__step_actions: list = []                  # Инициализация списка шаговых действий
+
+        # Генерация уникального токена inline кнопок
+        self.__inline_keyboard_token = generate_random_string(32)
 
         # Регистрация обработчика сообщений
         @self.message_handler(func=lambda message: True, content_types=['text', 'audio', 'document', 'photo', 'sticker', 'video', 'location', 'contact'])
@@ -117,7 +87,17 @@ class Bot(telebot.TeleBot):
 
     # Обработчик callback запросов
     def __callback_query_handler(self, call: telebot.types.CallbackQuery):
-        callback_data = get_keyboard_button_data(call.data)
+        session = Database.make_session()
+        button = session.query(KeyboardButton).filter_by(button_id=call.data).first()
+        session.close()
+
+        if button.keyboard_token != self.__inline_keyboard_token:
+            # Ошибка: Данная сессия недоступна. Вызовите новое меню.
+            markup = telebot.types.InlineKeyboardMarkup()
+            self.edit_message_text(strcontent.MESSAGE_INVALID_INLINE_KEYBOARD_TOKEN, call.message.chat.id, call.message.id)
+            return
+        
+        callback_data = button.data
 
         for command_info in self.__callback_query_commands:
             if callback_data['command'] == command_info.command:
@@ -218,3 +198,39 @@ class Bot(telebot.TeleBot):
         for action in self.__step_actions:
             if action.chat_id == chat_id and action.user_id == user_id:
                 self.__step_actions.remove(action)
+
+    # Позволяет получить уникальный токен inline кнопок
+    def get_inline_keyboard_token(self):
+        return self.__inline_keyboard_token
+
+
+# Билдер callack данных для кнопок
+class InlineKeyboardDataBuilder:
+    # Конструктор
+    def __init__(self, bot: Bot, db_session: Session):
+        self.__bot = bot
+        self.__db_session = db_session
+        self.__db_buttons = []
+
+    # Метод добавления callback_data в список
+    def add_callback_data(self, **kwargs):
+        button = KeyboardButton(kwargs, self.__bot.get_inline_keyboard_token())
+        self.__db_session.add(button)
+        self.__db_buttons.append(button)
+
+    # Принимает данные, фиксирует в сущности KeyboardButton и возвращает button_id
+    def make_single_callback_data(self, **kwargs):
+        button = KeyboardButton(kwargs, self.__bot.get_inline_keyboard_token())
+        self.__db_session.add(button)
+        self.__db_session.commit()
+        return str(button.button_id)
+        
+    # Фиксирует данные в сущности KeyboardButton и возвращает список button_id
+    def make(self) -> list:
+        self.__db_session.commit()
+        ids = []
+        for button in self.__db_buttons:
+            ids.append(str(button.button_id))
+        self.__db_buttons.clear()
+        return ids
+    

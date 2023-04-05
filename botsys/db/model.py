@@ -27,10 +27,12 @@ class KeyboardButton(Database.Base):
     # Столбцы
     button_id = Column(UUID, primary_key=True, default=uuid.uuid4)
     data = Column(JSON, nullable=False)
+    keyboard_token = Column(VARCHAR(32), nullable=False)
 
     # Конструктор
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, keyboard_token: str):
         self.data = data
+        self.keyboard_token = keyboard_token
 
     # Преобразование в строку
     def __repr__(self):
@@ -48,6 +50,7 @@ class User(Database.Base):
     last_name = Column(VARCHAR(20), default="")                                             # Фамилия пользователя
     middle_name = Column(VARCHAR(20), default="")                                           # Отчество пользователя
     register_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
+    tz_msc_offset = Column(SmallInteger, nullable=False, default=0)                         # Часовой пояс относительно Московского времени
     is_deactivated = Column(Boolean, nullable=False, default=False)                         # Статус деактивации аккаунта
 
     # Отношения
