@@ -70,9 +70,12 @@ class UserRole(Base):
 
     # Столбцы
     user_role_id = Column(BigInteger, primary_key=True)                                     # Идентификатор роли пользователя
-    user_id = Column(BigInteger, ForeignKey("users.user_id"), unique=True)                  # Идентификатор пользователя
+    user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False, unique=True)  # Идентификатор пользователя
     role = Column(VARCHAR(1), nullable=False)                                               # Роль пользователя
     acquisition_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)  # Временная метка получения роли
+
+    # Отношения
+    admin = relationship('Admin', backref='role', uselist=False, cascade="all,delete")
 
     # Конструктор
     def __init__(self, user_id: int, role: str):
@@ -90,7 +93,24 @@ class UserRole(Base):
     # Проверка пользователя на роль Администратор
     def is_admin(self):
         return (self.role == UserRole.ROLE_ADMIN)
+    
 
+# Администраторы
+class Admin(Base):
+    __tablename__ = 'admins'
+
+    # Столбцы
+    admin_id = Column(BigInteger, primary_key=True)                                                         # Идентификатор администратора
+    user_role_id = Column(BigInteger, ForeignKey("user_roles.user_role_id"), nullable=False, unique=True)   # Идентификатор роли пользователя
+    is_consultation_admin = Column(Boolean, nullable=False, default=False)                                  # Является ли администратором консультаций
+
+    # Конструктор
+    def __init__(self, user_role_id: int):
+        self.user_role_id = user_role_id
+
+    # Преобразование в строку
+    def __repr__(self):
+        return f"<Admin({self.admin_id}, {self.user_role_id})>"
 
 # Записи на консультацию
 class Сonsultation(Base):

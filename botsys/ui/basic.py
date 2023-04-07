@@ -155,10 +155,13 @@ class ConsultationCommand:
         db_user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
 
         if db_user is None:
-            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION, show_alert=True)
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION)
             return
         elif db_user.consultations.filter_by(is_processed=False).first() is not None:
             bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_ALREADY_ACTIVE_CONSULTATION, show_alert=True)
+            return
+        elif db_user.role is not None:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_NO_ACCESS)
             return
 
         stage = callback_data.get("stage", 1)
