@@ -1,27 +1,12 @@
-from sqlalchemy import Column, ForeignKey, SmallInteger, Integer, BigInteger, String, Boolean, JSON, VARCHAR, UUID, TIMESTAMP, create_engine
+from sqlalchemy import Column, ForeignKey, SmallInteger, Integer, BigInteger, String, Boolean, JSON, VARCHAR, UUID, TIMESTAMP
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.orm.session import Session
-from sqlalchemy.engine import Engine
 import datetime, uuid
 
 
-# Статический класс для доступа к движку БД
-class Database:
-    engine: Engine
-
-    Base = declarative_base()
-
-    @staticmethod
-    def create_engine(url: str):
-        Database.engine = create_engine(url)
-
-    @staticmethod
-    def make_session() -> Session:
-        return Session(bind=Database.engine)
-
+Base = declarative_base() # Базовый класс модели
 
 # Системная таблица для хранения данных внутри callback кнопок
-class KeyboardButton(Database.Base):
+class KeyboardButton(Base):
     __tablename__ = 'system_keyboard_buttons'
 
     # Столбцы
@@ -40,22 +25,22 @@ class KeyboardButton(Database.Base):
 
 
 # Пользователь
-class User(Database.Base):
+class User(Base):
     __tablename__ = 'users'
 
     # Столбцы
     user_id = Column(BigInteger, primary_key=True)                                          # Числовой идентификатор
     tg_user_id = Column(BigInteger, unique=True)                                            # Идентификатор аккаунта Telegram
-    first_name = Column(VARCHAR(20), default="")                                            # Имя пользователя
-    last_name = Column(VARCHAR(20), default="")                                             # Фамилия пользователя
-    middle_name = Column(VARCHAR(20), default="")                                           # Отчество пользователя
+    first_name = Column(VARCHAR(20), nullable=False)                                        # Имя пользователя
+    last_name = Column(VARCHAR(20), default=None)                                           # Фамилия пользователя
+    middle_name = Column(VARCHAR(20), default=None)                                         # Отчество пользователя
     register_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
     tz_msc_offset = Column(SmallInteger, nullable=False, default=0)                         # Часовой пояс относительно Московского времени
     is_deactivated = Column(Boolean, nullable=False, default=False)                         # Статус деактивации аккаунта
 
     # Отношения
-    role = relationship('UserRole', backref='user', uselist=False)
-    consultation = relationship('Сonsultation', backref='user', uselist=True)
+    role = relationship('UserRole', backref='user', uselist=False, cascade="all,delete")
+    consultations = relationship('Сonsultation', backref='user', uselist=True, cascade="all,delete", lazy="dynamic")
 
     # Конструктор
     def __init__(self, tg_user_id: int):
@@ -65,18 +50,27 @@ class User(Database.Base):
     def __repr__(self):
         return f"<User({self.user_id}, {self.tg_user_id})>"
     
+    # Возвращает полное имя пользователя
+    def get_full_name(self, last_name=True, middle_name=True):
+        full_name = self.first_name
+        if last_name and self.last_name is not None:
+            full_name = f"{self.last_name} {full_name}"
+        if middle_name and self.middle_name is not None:
+            full_name = f"{full_name} {self.middle_name}"
+        return full_name
+    
 
 # Специальные роли
-class UserRole(Database.Base):
+class UserRole(Base):
     __tablename__ = 'user_roles'
 
     # Константы
-    ROLE_MANAGER = 'm'
     ROLE_TEACHER = 't'
     ROLE_ADMIN = 'a'
 
     # Столбцы
-    user_id = Column(BigInteger, ForeignKey("users.user_id"), primary_key=True)             # Идентификатор пользователя
+    user_role_id = Column(BigInteger, primary_key=True)                                     # Идентификатор роли пользователя
+    user_id = Column(BigInteger, ForeignKey("users.user_id"), unique=True)                  # Идентификатор пользователя
     role = Column(VARCHAR(1), nullable=False)                                               # Роль пользователя
     acquisition_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)  # Временная метка получения роли
 
@@ -87,11 +81,7 @@ class UserRole(Database.Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<UserRole({self.user_id}, '{self.role}')>"
-    
-    # Проверка пользователя на роль Менеджер
-    def is_manager(self):
-        return (self.role == UserRole.ROLE_MANAGER)
+        return f"<UserRole({self.user_role_id}, {self.user_id}, '{self.role}')>"
     
     # Проверка пользователя на роль Учитель
     def is_teacher(self):
@@ -103,7 +93,7 @@ class UserRole(Database.Base):
 
 
 # Записи на консультацию
-class Сonsultation(Database.Base):
+class Сonsultation(Base):
     __tablename__ = 'consultations'
 
     # Столбцы
@@ -131,3 +121,21 @@ class Сonsultation(Database.Base):
     # Преобразование в строку
     def __repr__(self):
         return f"<Сonsultation({self.consultation_id}, {self.user_id})>"
+    
+# Таблица списка времён, которые доступны во время записи на консультацию
+class СonsultationTime(Base):
+    __tablename__ = 'consultation_times'
+
+    # Столбцы
+    consultation_time_id = Column(BigInteger, primary_key=True)
+    utc_hour = Column(SmallInteger, nullable=False)
+    utc_minute = Column(SmallInteger, nullable=False)
+
+    # Конструктор
+    def __init__(self, utc_hour: int, utc_minute: int):
+        self.utc_hour = utc_hour
+        self.utc_minute = utc_minute
+
+    # Преобразование в строку
+    def __repr__(self):
+        return f"<СonsultationTime({self.consultation_time_id}, {self.utc_hour}, {self.utc_minute})>"

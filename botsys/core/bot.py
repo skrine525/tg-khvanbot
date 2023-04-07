@@ -2,7 +2,8 @@ import telebot
 from typing import Callable
 from botsys.core import strcontent
 from botsys.core.system import generate_random_string
-from botsys.db.model import Session, Database, KeyboardButton
+from botsys.db.model import KeyboardButton
+from botsys.db.behavior import Session, Database
 
 
 # Базовый класс, хранящий ифномарцию о команде

@@ -1,7 +1,7 @@
 from botsys.core.system import initdir
 from botsys.core.bot import Bot
 from botsys.commands import register_commands
-from botsys.db.model import Database
+from botsys.db.behavior import Database
 from config import BOT_TOKEN, SQLALCHEMY_URL
 
 
