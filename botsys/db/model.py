@@ -32,7 +32,7 @@ class User(Base):
     first_name = Column(VARCHAR(20), nullable=False)                                            # Имя пользователя
     last_name = Column(VARCHAR(20), default=None)                                               # Фамилия пользователя
     middle_name = Column(VARCHAR(20), default=None)                                             # Отчество пользователя
-    registerayion_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)    # Время регистрации пользователя
+    registration_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
     tz_utc_offset = Column(SmallInteger, nullable=False, default=0)                             # Часовой пояс относительно UTC
     #is_deactivated = Column(Boolean, nullable=False, default=False)                             # Статус деактивации аккаунта
 
