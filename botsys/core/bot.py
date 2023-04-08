@@ -107,11 +107,11 @@ class Bot(telebot.TeleBot):
 
         for action in self.__step_actions:
             if action.chat_id == chat_id and action.user_id == user_id:
+                self.__step_actions.remove(action) # Иногда выдает баги, когда в массиве два степ экшена
                 if self.__check_message_handler_limits(message):
                     session = Database.make_session()
                     action.callback(self, message, session, *action.args, **action.kwargs)
                     session.close()
-                self.__step_actions.remove(action)
                 return
 
 
@@ -223,7 +223,8 @@ class Bot(telebot.TeleBot):
 
     # Устанавливает следущее шаговое действие
     def register_next_step_action(self, chat_id: int, user_id: int, callback: Callable, *args, **kwargs):
-        self.__step_actions.append(StepAction(chat_id, user_id, callback, *args, **kwargs))
+        self.clear_step_action(chat_id, user_id)                                            # Сначала чистим для пользователя в чате степ экшены
+        self.__step_actions.append(StepAction(chat_id, user_id, callback, *args, **kwargs)) # А теперь добавляем
 
     # Очищает шаговое действие
     def clear_step_action(self, chat_id: int, user_id: int):
