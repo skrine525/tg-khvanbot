@@ -6,6 +6,36 @@ from botsys.db.model import KeyboardButton
 from botsys.db.behavior import Session, Database
 
 
+# Билдер callack данных для кнопок
+class InlineKeyboardDataBuilder:
+    # Конструктор
+    def __init__(self, session: Session):
+        self.__session = session
+        self.__db_buttons = []
+
+    # Метод добавления callback_data в список
+    def add_callback_data(self, **kwargs):
+        button = KeyboardButton(kwargs)
+        self.__session.add(button)
+        self.__db_buttons.append(button)
+
+    # Принимает данные, фиксирует в сущности KeyboardButton и возвращает button_id
+    def build_single_callback_data(self, **kwargs):
+        button = KeyboardButton(kwargs)
+        self.__session.add(button)
+        self.__session.commit()
+        return str(button.button_id)
+        
+    # Фиксирует данные в сущности KeyboardButton и возвращает список button_id
+    def build(self) -> list:
+        self.__session.commit()
+        ids = []
+        for button in self.__db_buttons:
+            ids.append(str(button.button_id))
+        self.__db_buttons.clear()
+        return ids
+
+
 # Базовый класс, хранящий ифномарцию о команде
 class BaseCommand:
     def __init__(self, command: str, callback: Callable):
@@ -43,9 +73,6 @@ class Bot(telebot.TeleBot):
         self.__inline_query_commands: list = []         # Инициализация списка команд inline запросов
         self.__step_actions: list = []                  # Инициализация списка шаговых действий
 
-        # Генерация уникального токена inline кнопок
-        self.__inline_keyboard_token = generate_random_string(32)
-
         # Регистрация обработчика сообщений
         @self.message_handler(func=lambda message: True, content_types=['text', 'audio', 'document', 'photo', 'sticker', 'video', 'location', 'contact'])
         def message_handler(message: telebot.types.Message):
@@ -81,7 +108,9 @@ class Bot(telebot.TeleBot):
         for action in self.__step_actions:
             if action.chat_id == chat_id and action.user_id == user_id:
                 if self.__check_message_handler_limits(message):
-                    action.callback(self, message, *action.args, **action.kwargs)
+                    session = Database.make_session()
+                    action.callback(self, message, session, *action.args, **action.kwargs)
+                    session.close()
                 self.__step_actions.remove(action)
                 return
 
@@ -90,13 +119,6 @@ class Bot(telebot.TeleBot):
     def __callback_query_handler(self, call: telebot.types.CallbackQuery):
         session = Database.make_session()
         button = session.query(KeyboardButton).filter_by(button_id=call.data).first()
-        session.close()
-
-        if button.keyboard_token != self.__inline_keyboard_token:
-            # Ошибка: Данная сессия недоступна. Вызовите новое меню.
-            markup = telebot.types.InlineKeyboardMarkup()
-            self.edit_message_text(strcontent.MESSAGE_INVALID_INLINE_KEYBOARD_TOKEN, call.message.chat.id, call.message.id)
-            return
         
         callback_data = button.data
 
@@ -110,8 +132,11 @@ class Bot(telebot.TeleBot):
                 except KeyError:
                     pass
                 
-                command_info.callback(self, call, callback_data)
+                command_info.callback(self, call, session, callback_data)
                 return
+        
+        # Закрываем сессию БД
+        session.close()
         
         # Если выход из метода не произошел, значит была получена неизвестная команда
         # Выводим ошибку пользователю
@@ -124,7 +149,9 @@ class Bot(telebot.TeleBot):
             for command in self.__message_commands:
                 if message.text.startswith(command.slash_сommand) and self.__check_message_handler_limits(message):
                     self.clear_step_action(message.chat.id, message.from_user.id)
-                    command.callback(self, message)
+                    session = Database.make_session()
+                    command.callback(self, message, session)
+                    session.close()
                     return
 
         # Обработка шагового действия пользователя
@@ -136,7 +163,9 @@ class Bot(telebot.TeleBot):
             query = inline.query.lower()                                        # Переводим запрос в нижний регистр
             for command_info in self.__inline_query_commands:
                 if query.startswith(command_info.command):
+                    session = Database.make_session()
                     command_info.callback(self, inline)
+                    session.close()
                     return
 
         # Если выход из метода не произошел, значит пользователь не ввел запрос или была получена неизвестная команда запроса
@@ -203,35 +232,3 @@ class Bot(telebot.TeleBot):
     # Позволяет получить уникальный токен inline кнопок
     def get_inline_keyboard_token(self):
         return self.__inline_keyboard_token
-
-
-# Билдер callack данных для кнопок
-class InlineKeyboardDataBuilder:
-    # Конструктор
-    def __init__(self, bot: Bot, db_session: Session):
-        self.__bot = bot
-        self.__db_session = db_session
-        self.__db_buttons = []
-
-    # Метод добавления callback_data в список
-    def add_callback_data(self, **kwargs):
-        button = KeyboardButton(kwargs, self.__bot.get_inline_keyboard_token())
-        self.__db_session.add(button)
-        self.__db_buttons.append(button)
-
-    # Принимает данные, фиксирует в сущности KeyboardButton и возвращает button_id
-    def build_single_callback_data(self, **kwargs):
-        button = KeyboardButton(kwargs, self.__bot.get_inline_keyboard_token())
-        self.__db_session.add(button)
-        self.__db_session.commit()
-        return str(button.button_id)
-        
-    # Фиксирует данные в сущности KeyboardButton и возвращает список button_id
-    def build(self) -> list:
-        self.__db_session.commit()
-        ids = []
-        for button in self.__db_buttons:
-            ids.append(str(button.button_id))
-        self.__db_buttons.clear()
-        return ids
-    

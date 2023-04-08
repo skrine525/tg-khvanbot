@@ -7,17 +7,15 @@ Base = declarative_base() # Базовый класс модели
 
 # Системная таблица для хранения данных внутри callback кнопок
 class KeyboardButton(Base):
-    __tablename__ = 'system_keyboard_buttons'
+    __tablename__ = 'keyboard_buttons'
 
     # Столбцы
     button_id = Column(UUID, primary_key=True, default=uuid.uuid4)
     data = Column(JSON, nullable=False)
-    keyboard_token = Column(VARCHAR(32), nullable=False)
 
     # Конструктор
-    def __init__(self, data: dict, keyboard_token: str):
+    def __init__(self, data: dict):
         self.data = data
-        self.keyboard_token = keyboard_token
 
     # Преобразование в строку
     def __repr__(self):
@@ -30,17 +28,17 @@ class User(Base):
 
     # Столбцы
     user_id = Column(BigInteger, primary_key=True)                                          # Числовой идентификатор
-    tg_user_id = Column(BigInteger, unique=True)                                            # Идентификатор аккаунта Telegram
+    tg_user_id = Column(BigInteger, unique=True, nullable=False)                            # Идентификатор аккаунта Telegram
     first_name = Column(VARCHAR(20), nullable=False)                                        # Имя пользователя
     last_name = Column(VARCHAR(20), default=None)                                           # Фамилия пользователя
     middle_name = Column(VARCHAR(20), default=None)                                         # Отчество пользователя
     register_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
     tz_msc_offset = Column(SmallInteger, nullable=False, default=0)                         # Часовой пояс относительно Московского времени
-    is_deactivated = Column(Boolean, nullable=False, default=False)                         # Статус деактивации аккаунта
+    #is_deactivated = Column(Boolean, nullable=False, default=False)                         # Статус деактивации аккаунта
 
     # Отношения
     role = relationship('UserRole', backref='user', uselist=False, cascade="all,delete")
-    consultations = relationship('Сonsultation', backref='user', uselist=True, cascade="all,delete", lazy="dynamic")
+    consultations = relationship('Consultation', backref='user', uselist=True, cascade="all,delete", lazy="dynamic")
 
     # Конструктор
     def __init__(self, tg_user_id: int):
@@ -48,7 +46,8 @@ class User(Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<User({self.user_id}, {self.tg_user_id})>"
+        fullname = self.get_full_name()
+        return f"<User({self.user_id}, {self.tg_user_id}, '{fullname}')>"
     
     # Возвращает полное имя пользователя
     def get_full_name(self, last_name=True, middle_name=True):
@@ -113,7 +112,7 @@ class Admin(Base):
         return f"<Admin({self.admin_id}, {self.user_role_id})>"
 
 # Записи на консультацию
-class Сonsultation(Base):
+class Consultation(Base):
     __tablename__ = 'consultations'
 
     # Столбцы
@@ -121,12 +120,15 @@ class Сonsultation(Base):
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False)               # Идентификатор пользователя
     creation_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время создания записи на консультацию
     is_processed = Column(Boolean, nullable=False, default=False)                           # Статус консультации
-    phone_number = Column(VARCHAR(20), nullable=False)                               # Ответ на вопрос "Номер телефона"
-    lang_level = Column(VARCHAR(50), nullable=False)                                 # Ответ на вопрос "Уровень языка"
-    hsk_exam = Column(VARCHAR(100), nullable=False)                                  # Ответ на вопрос "Экзамен HSK"
-    purpose = Column(VARCHAR(100), nullable=False)                                   # Ответ на вопрос "Цель изучения"
-    way_now = Column(VARCHAR(50), nullable=False)                                    # Ответ на вопрос "Способ изучения сейчас"
+    phone_number = Column(VARCHAR(20), nullable=False)                                      # Ответ на вопрос "Номер телефона"
+    lang_level = Column(VARCHAR(50), nullable=False)                                        # Ответ на вопрос "Уровень языка"
+    hsk_exam = Column(VARCHAR(100), nullable=False)                                         # Ответ на вопрос "Экзамен HSK"
+    purpose = Column(VARCHAR(100), nullable=False)                                          # Ответ на вопрос "Цель изучения"
+    way_now = Column(VARCHAR(50), nullable=False)                                           # Ответ на вопрос "Способ изучения сейчас"
     consultation_time = Column(TIMESTAMP, nullable=False)                                   # Удобное время консультации
+
+    # Отношения
+    notification = relationship("ConsultationNotification", backref="consultation", uselist=False, cascade="all,delete")
 
     # Конструктор
     def __init__(self, user_id: int, phone_number:str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
@@ -141,13 +143,34 @@ class Сonsultation(Base):
     # Преобразование в строку
     def __repr__(self):
         return f"<Сonsultation({self.consultation_id}, {self.user_id})>"
-    
-# Таблица списка времён, которые доступны во время записи на консультацию
-class СonsultationTime(Base):
-    __tablename__ = 'consultation_times'
+
+
+# Уведомления о консультациях
+class ConsultationNotification(Base):
+    __tablename__ = 'consultation_notifications'
 
     # Столбцы
-    consultation_time_id = Column(BigInteger, primary_key=True)
+    cn_id = Column(BigInteger, primary_key=True)                                                                    # Идентификатор уведомления
+    consultation_id = Column(BigInteger, ForeignKey("consultations.consultation_id"), unique=True, nullable=False)  # Идентификатор консультации
+    tg_chat_id = Column(BigInteger, nullable=False)                                                                 # Идентификатор чата Телеграмма
+    tg_message_id = Column(BigInteger, nullable=False)                                                              # Идентификатор сообщения Телеграмма
+
+    # Конструктор
+    def __init__(self, consultation_id: int, tg_chat_id: int, tg_message_id: int):
+        self.consultation_id = consultation_id
+        self.tg_chat_id = tg_chat_id
+        self.tg_message_id = tg_message_id
+
+    # Преобразование в строку
+    def __repr__(self):
+        return f"<ConsultationNotification({self.cn_id}, {self.consultation_id})>"
+    
+# Таблица списка времён, которые доступны во время записи на консультацию
+class СonsultationAppointmentTime(Base):
+    __tablename__ = 'consultation_appointment_times'
+
+    # Столбцы
+    cat_id = Column(BigInteger, primary_key=True)
     utc_hour = Column(SmallInteger, nullable=False)
     utc_minute = Column(SmallInteger, nullable=False)
 
@@ -158,4 +181,4 @@ class СonsultationTime(Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<СonsultationTime({self.consultation_time_id}, {self.utc_hour}, {self.utc_minute})>"
+        return f"<СonsultationAppointmentTime({self.cat_id}, {self.utc_hour}, {self.utc_minute})>"

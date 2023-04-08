@@ -2,19 +2,16 @@ import telebot, datetime
 from botsys.core import strcontent
 from botsys.core.system import get_keyboard_row_list, escape_markdownv2_text
 from botsys.core.bot import Bot, InlineKeyboardDataBuilder
-from botsys.db.model import User, Сonsultation, СonsultationTime
-from botsys.db.behavior import Database
+from botsys.db.model import User, Consultation, СonsultationAppointmentTime, Admin, ConsultationNotification
+from sqlalchemy.orm.session import Session
 
 
 class RegistrationCommand:
     @staticmethod
-    def start_message_command(bot: Bot, message: telebot.types.Message):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
-        session.close()
+    def start_message_command(bot: Bot, message: telebot.types.Message, session: Session):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
-        if db_user is None:
+        if user is None:
             bot.send_message(message.chat.id, strcontent.MESSAGE_START, parse_mode="MarkdownV2")
             bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=1, reg_data={})
         else:
@@ -22,12 +19,10 @@ class RegistrationCommand:
             bot.send_message(message.chat.id, strcontent.MESSAGE_ALREADY_REGISTERED)
 
     @staticmethod
-    def registation(bot: Bot, message: telebot.types.Message, stage, reg_data):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+    def registation(bot: Bot, message: telebot.types.Message, session: Session, stage, reg_data):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
-        if db_user is not None:
+        if user is not None:
             # Сообщение о том, что пользователь уже прошел регистрацию
             bot.send_message(message.chat.id, strcontent.MESSAGE_ALREADY_REGISTERED)
             return
@@ -56,7 +51,6 @@ class RegistrationCommand:
             ]
             for row in get_keyboard_row_list(timezones, 5):
                 markup.row(*row)
-            session.close()
 
             bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_1.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2", reply_markup=markup)
             bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=2, reg_data=reg_data)
@@ -89,17 +83,16 @@ class RegistrationCommand:
                 bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=2, reg_data=reg_data)
                 return
             
-            db_user = User(message.from_user.id)
-            db_user.first_name = reg_data['first_name']
-            db_user.tz_msc_offset = timezone
-            session.add(db_user)
+            user = User(message.from_user.id)
+            user.first_name = reg_data['first_name']
+            user.tz_msc_offset = timezone
+            session.add(user)
             session.commit()
             
             inline_markup = telebot.types.InlineKeyboardMarkup()
-            keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
+            keyboard_data_builder = InlineKeyboardDataBuilder(session)
             callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
             inline_markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION, callback_data=callback_data))
-            session.close()
 
             markup = telebot.types.ReplyKeyboardRemove()
 
@@ -121,236 +114,328 @@ class RegistrationCommand:
 
 class MenuCommand:
     @staticmethod
-    def message_command(bot: Bot, message: telebot.types.Message):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+    def message_command(bot: Bot, message: telebot.types.Message, session: Session):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
-        if db_user is None:
+        if user is None:
             bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
             return
 
+        markup = MenuCommand.__get_menu_markup(bot, session, user)
+        text = MenuCommand.__get_menu_text()
+
+        bot.send_message(message.chat.id, text, reply_markup=markup)
+
+    @staticmethod
+    def callback_query_command(bot: Bot, call: telebot.types.CallbackQuery, session: Session, callback_data: dict):
+        user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
+
+        if user is None:
+            bot.answer_callback_query(call.id, strcontent.MESSAGE_NEED_REGISTRATION, show_alert=True)
+            return
+        
+        action = callback_data.get("action", 0)
+        if action == -1:
+            text = strcontent.MESSAGE_MENU_CLOSED
+            bot.edit_message_text(text, call.message.chat.id, call.message.id)
+        elif action == 0:
+            markup = MenuCommand.__get_menu_markup(bot, session, user)
+            text = MenuCommand.__get_menu_text()
+            bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
+        else:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_UNKNOWN_COMMAND)
+
+    @staticmethod
+    def __get_menu_markup(bot: Bot, session: Session, user: User) -> telebot.types.InlineKeyboardButton:
         markup = telebot.types.InlineKeyboardMarkup()
-        keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
+        keyboard_data_builder = InlineKeyboardDataBuilder(session)
         buttons = []
 
-        if db_user.role is None:
+        if user.role is None:
             keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION)
             buttons.append(strcontent.BUTTON_CONSULTATION)
+        elif (user.role is not None) and (user.role.is_admin()):
+            keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL)
+            buttons.append(strcontent.BUTTON_ADMIN_PANEL)
 
-        buttons_ids = keyboard_data_builder.build()
-        session.close()
+        buttons.append(strcontent.BUTTON_CLOSE)
+        keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_MESSAGE_MENU, action=-1)
+
+        button_ids = keyboard_data_builder.build()
 
         for i in range(len(buttons)):
-            markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=buttons_ids[i]))
+            markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
+        
+        return markup
 
-        bot.send_message(message.chat.id, strcontent.MESSAGE_MENU, reply_markup=markup)
+    @staticmethod
+    def __get_menu_text() -> str:
+        return strcontent.MESSAGE_MENU
 
 
 class ConsultationCommand:
     @staticmethod
-    def callback_query_command(bot: Bot, call: telebot.types.CallbackQuery, callback_data: dict):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
+    def callback_query_command(bot: Bot, call: telebot.types.CallbackQuery, session: Session, callback_data: dict):
+        user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
 
-        if db_user is None:
+        if user is None:
             bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION)
             return
-        elif db_user.consultations.filter_by(is_processed=False).first() is not None:
-            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_ALREADY_ACTIVE_CONSULTATION, show_alert=True)
-            return
-        elif db_user.role is not None:
-            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_NO_ACCESS)
-            return
-
-        stage = callback_data.get("stage", 1)
-        form = callback_data.get("form", {})
-        if stage < 0:
-            session.close()
+        
+        action = callback_data.get("action", 1)
+        if action == -1:
             bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_CANCELED, call.message.chat.id, call.message.id)
-        elif stage == 1:
-            session.close()
-            inline_markup = telebot.types.InlineKeyboardMarkup()
-            bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=inline_markup)
-            
-            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER))
-            #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
-            bot.send_message(call.message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_1, reply_markup=markup)
-            bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, form=form)
-        elif stage == 2:
-            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
+        elif action == 1:
+            if user.consultations.filter_by(is_processed=False).first() is not None:
+                bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_ALREADY_ACTIVE_CONSULTATION, show_alert=True)
+                return
+            elif user.role is not None:
+                bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_NO_ACCESS)
+                return
 
-            utc_time = datetime.datetime.utcnow()
-            user_time = utc_time + tz_timedelta
-            interval = datetime.timedelta(days=1)
+            stage = callback_data.get("stage", 1)
+            form = callback_data.get("form", {})
+            if stage == -1:
+                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_CANCELED, call.message.chat.id, call.message.id)
+            elif stage == 1:
+                inline_markup = telebot.types.InlineKeyboardMarkup()
+                bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=inline_markup)
+                
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
+                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER))
+                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
+                bot.send_message(call.message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_1, reply_markup=markup)
+                bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, form=form)
+            elif stage == 2:
+                tz_timedelta = datetime.timedelta(hours=user.tz_msc_offset + 3)
 
-            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
-            button_text = []
+                utc_time = datetime.datetime.utcnow()
+                user_time = utc_time + tz_timedelta
+                interval = datetime.timedelta(days=1)
 
-            for i in range(7):
-                user_time = user_time + interval
+                callback_data_builder = InlineKeyboardDataBuilder(session)
+                button_text = []
 
-                callback_data = {
-                    "command": callback_data["command"],
-                    "stage": 3,
-                    "form": callback_data["form"],
-                    "time": {"day": user_time.day, "month": user_time.month, "year": user_time.year}
-                }
-                callback_data_builder.add_callback_data(**callback_data)
-
-                date_text = f"0{user_time.day}" if user_time.day < 10 else f"{user_time.day}"
-                date_text = f"{date_text}.0{user_time.month}" if user_time.month < 10 else f"{date_text}.{user_time.month}"
-                button_text.append(date_text)
-            callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
-            button_ids = callback_data_builder.build()
-            session.close()
-
-            buttons = []
-            for i in range(len(button_text)):
-                buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
-
-            markup = telebot.types.InlineKeyboardMarkup()
-            for row in get_keyboard_row_list(buttons):
-                markup.row(*row)
-            #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
-
-            bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_2, call.message.chat.id, call.message.id, reply_markup=markup)
-        elif stage == 3:
-            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
-
-            date_day = callback_data["time"]["day"]
-            date_month = callback_data["time"]["month"]
-            date_year = callback_data["time"]["year"]
-            date_text = f"0{date_day}" if date_day < 10 else f"{date_day}"
-            date_text = f"{date_text}\\.0{date_month}" if date_month < 10 else f"{date_text}\\.{date_month}"
-
-            utc_time = datetime.datetime.utcnow()
-
-            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
-            button_text = []
-            consultation_times = session.query(СonsultationTime).order_by(СonsultationTime.utc_hour, СonsultationTime.utc_minute).all()
-
-            for consultation_time in consultation_times:
-                user_time = datetime.datetime(
-                    year=utc_time.year, month=utc_time.month, day=utc_time.day,
-                    hour=consultation_time.utc_hour, minute=consultation_time.utc_minute
-                )
-                user_time = user_time + tz_timedelta
-
-                display_hour = user_time.hour
-                display_minute = user_time.minute
-
-                user_utc_time = datetime.datetime(
-                    year=date_year, month=date_month, day=date_day,
-                    hour=user_time.hour, minute=user_time.minute
-                )
-                user_utc_time = user_utc_time - tz_timedelta
-
-                if user_utc_time > utc_time:
-                    time_text = f"0{display_hour}" if display_hour < 10 else f"{display_hour}"
-                    time_text = f"{time_text}:0{display_minute}" if display_minute < 10 else f"{time_text}:{display_minute}"
-                    button_text.append(time_text)
+                for i in range(7):
+                    user_time = user_time + interval
 
                     callback_data = {
                         "command": callback_data["command"],
-                        "stage": 4,
+                        "action": 1,
+                        "stage": 3,
                         "form": callback_data["form"],
-                        "time": {
-                            "day": user_utc_time.day,
-                            "month": user_utc_time.month,
-                            "year": user_utc_time.year,
-                            "hour": user_utc_time.hour,
-                            "minute": user_utc_time.minute
-                        }
+                        "time": {"day": user_time.day, "month": user_time.month, "year": user_time.year}
                     }
                     callback_data_builder.add_callback_data(**callback_data)
 
-            callback_data_builder.add_callback_data(command=callback_data["command"], stage=2, form=callback_data["form"])  
-            #callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
-            button_ids = callback_data_builder.build()
-            session.close()
+                    date_text = f"0{user_time.day}" if user_time.day < 10 else f"{user_time.day}"
+                    date_text = f"{date_text}.0{user_time.month}" if user_time.month < 10 else f"{date_text}.{user_time.month}"
+                    button_text.append(date_text)
+                callback_data_builder.add_callback_data(command=callback_data["command"], action=-1)
+                button_ids = callback_data_builder.build()
 
-            buttons = []
-            for i in range(len(button_text)):
-                buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
+                buttons = []
+                for i in range(len(button_text)):
+                    buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
 
-            markup = telebot.types.InlineKeyboardMarkup()
-            for row in get_keyboard_row_list(buttons):
-                markup.row(*row)
-            #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
-            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=button_ids[-1]))
+                markup = telebot.types.InlineKeyboardMarkup()
+                for row in get_keyboard_row_list(buttons):
+                    markup.row(*row)
+                #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
 
-            bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_3.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
-        elif stage == 4:
-            tz_timedelta = datetime.timedelta(hours=db_user.tz_msc_offset + 3)
+                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_2, call.message.chat.id, call.message.id, reply_markup=markup)
+            elif stage == 3:
+                tz_timedelta = datetime.timedelta(hours=user.tz_msc_offset + 3)
 
-            user_utc_time = datetime.datetime(
-                year=callback_data["time"]["year"], month=callback_data["time"]["month"],
-                day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
-                minute=callback_data["time"]["minute"], second=0, microsecond=0
-            )
+                date_day = callback_data["time"]["day"]
+                date_month = callback_data["time"]["month"]
+                date_year = callback_data["time"]["year"]
+                date_text = f"0{date_day}" if date_day < 10 else f"{date_day}"
+                date_text = f"{date_text}\\.0{date_month}" if date_month < 10 else f"{date_text}\\.{date_month}"
 
-            display_time = user_utc_time + tz_timedelta
-            date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
-            date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
-            time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
-            time_text = f"{time_text}:0{display_time.minute}" if display_time.minute < 10 else f"{time_text}:{display_time.minute}"
+                utc_time = datetime.datetime.utcnow()
 
-            callback_data_builder = InlineKeyboardDataBuilder(bot, session)
-            callback_data_builder.add_callback_data(
-                command=callback_data["command"], stage=5,
-                form=callback_data["form"], time=callback_data["time"]
-            )
-            callback_data_builder.add_callback_data(
-                command=callback_data["command"], stage=2,
-                form=callback_data["form"]
-            )
-            callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
-            button_ids = callback_data_builder.build()
+                callback_data_builder = InlineKeyboardDataBuilder(session)
+                button_text = []
+                consultation_times = session.query(СonsultationAppointmentTime).order_by(СonsultationAppointmentTime.utc_hour, СonsultationAppointmentTime.utc_minute).all()
 
-            markup = telebot.types.InlineKeyboardMarkup()
-            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONFIRM, callback_data=button_ids[0]))
-            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONSULTATION_CHANGE_TIME, callback_data=button_ids[1]))
-            markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[2]))
+                for consultation_time in consultation_times:
+                    user_time = datetime.datetime(
+                        year=utc_time.year, month=utc_time.month, day=utc_time.day,
+                        hour=consultation_time.utc_hour, minute=consultation_time.utc_minute
+                    )
+                    user_time = user_time + tz_timedelta
 
-            embedded_text_list = {'date': date_text, 'time': time_text, 'user_name': db_user.get_full_name()}
-            embedded_text_list = {**embedded_text_list, **callback_data["form"]}
-            for i in embedded_text_list:
-                embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
+                    display_hour = user_time.hour
+                    display_minute = user_time.minute
 
-            text = strcontent.MESSAGE_CONSULTATION_CONFIRMATION.format(**embedded_text_list)
-            bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
-            session.close()
-        elif stage == 5:
-            consultation_time = datetime.datetime(
-                year=callback_data["time"]["year"], month=callback_data["time"]["month"],
-                day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
-                minute=callback_data["time"]["minute"], second=0, microsecond=0
-            )
-            db_consultation = Сonsultation(
-                db_user.user_id, callback_data["form"]["phone_number"],
-                callback_data["form"]["lang_level"], callback_data["form"]["hsk_exam"],
-                callback_data["form"]["purpose"], callback_data["form"]["way_now"], consultation_time
-            )
+                    user_utc_time = datetime.datetime(
+                        year=date_year, month=date_month, day=date_day,
+                        hour=user_time.hour, minute=user_time.minute
+                    )
+                    user_utc_time = user_utc_time - tz_timedelta
 
-            session.add(db_consultation)
-            session.commit()
+                    if user_utc_time > utc_time:
+                        time_text = f"0{display_hour}" if display_hour < 10 else f"{display_hour}"
+                        time_text = f"{time_text}:0{display_minute}" if display_minute < 10 else f"{time_text}:{display_minute}"
+                        button_text.append(time_text)
 
-            text = strcontent.MESSAGE_CONSULTATION_SENT.format(consultation_id=db_consultation.consultation_id)
-            bot.edit_message_text(text, call.message.chat.id, call.message.id)
+                        callback_data = {
+                            "command": callback_data["command"],
+                            "action": 1,
+                            "stage": 4,
+                            "form": callback_data["form"],
+                            "time": {
+                                "day": user_utc_time.day,
+                                "month": user_utc_time.month,
+                                "year": user_utc_time.year,
+                                "hour": user_utc_time.hour,
+                                "minute": user_utc_time.minute
+                            }
+                        }
+                        callback_data_builder.add_callback_data(**callback_data)
 
+                callback_data_builder.add_callback_data(command=callback_data["command"], action=1, stage=2, form=callback_data["form"])  
+                #callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
+                button_ids = callback_data_builder.build()
+
+                buttons = []
+                for i in range(len(button_text)):
+                    buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
+
+                markup = telebot.types.InlineKeyboardMarkup()
+                for row in get_keyboard_row_list(buttons):
+                    markup.row(*row)
+                #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=button_ids[-1]))
+
+                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_3.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
+            elif stage == 4:
+                tz_timedelta = datetime.timedelta(hours=user.tz_msc_offset + 3)
+
+                user_utc_time = datetime.datetime(
+                    year=callback_data["time"]["year"], month=callback_data["time"]["month"],
+                    day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
+                    minute=callback_data["time"]["minute"], second=0, microsecond=0
+                )
+
+                display_time = user_utc_time + tz_timedelta
+                date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
+                date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
+                time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
+                time_text = f"{time_text}:0{display_time.minute}" if display_time.minute < 10 else f"{time_text}:{display_time.minute}"
+
+                callback_data_builder = InlineKeyboardDataBuilder(session)
+                callback_data_builder.add_callback_data(
+                    command=callback_data["command"], action=1, stage=5,
+                    form=callback_data["form"], time=callback_data["time"]
+                )
+                callback_data_builder.add_callback_data(
+                    command=callback_data["command"], action=1, stage=2,
+                    form=callback_data["form"]
+                )
+                callback_data_builder.add_callback_data(command=callback_data["command"], action=-1)
+                button_ids = callback_data_builder.build()
+
+                markup = telebot.types.InlineKeyboardMarkup()
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONFIRM, callback_data=button_ids[0]))
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONSULTATION_CHANGE_TIME, callback_data=button_ids[1]))
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[2]))
+
+                embedded_text_list = {'date': date_text, 'time': time_text, 'user_name': user.get_full_name()}
+                embedded_text_list = {**embedded_text_list, **callback_data["form"]}
+                for i in embedded_text_list:
+                    embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
+
+                text = strcontent.MESSAGE_CONSULTATION_CONFIRMATION.format(**embedded_text_list)
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
+            elif stage == 5:
+                consultation_time = datetime.datetime(
+                    year=callback_data["time"]["year"], month=callback_data["time"]["month"],
+                    day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
+                    minute=callback_data["time"]["minute"], second=0, microsecond=0
+                )
+                consultation = Consultation(
+                    user.user_id, callback_data["form"]["phone_number"],
+                    callback_data["form"]["lang_level"], callback_data["form"]["hsk_exam"],
+                    callback_data["form"]["purpose"], callback_data["form"]["way_now"], consultation_time
+                )
+
+                session.add(consultation)
+                session.commit()
+
+                text = strcontent.MESSAGE_CONSULTATION_SENT.format(consultation_id=consultation.consultation_id)
+                bot.edit_message_text(text, call.message.chat.id, call.message.id)
+                
+                # Уведомление администратора консультаций
+                notification_admin = session.query(Admin).filter_by(is_consultation_admin=True).first()
+                if notification_admin is not None:
+                    user_admin = notification_admin.role.user
+                    
+                    markup = telebot.types.InlineKeyboardMarkup()
+                    callback_data_builder = InlineKeyboardDataBuilder(session)
+                    callback_data = callback_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=2, consultation_id=consultation.consultation_id)
+                    markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONSULTATION_MARK_AS_PROCESSED, callback_data=callback_data))
+
+                    notification_text = ConsultationCommand.__get_notifiction_text(user_admin, consultation)
+                    notification_message = bot.send_message(user_admin.tg_user_id, notification_text, reply_markup=markup, parse_mode="MarkdownV2")
+                    notification = ConsultationNotification(
+                        consultation.consultation_id, notification_message.chat.id, notification_message.id
+                    )
+                    session.add(notification)
+                    session.commit()
+        elif action == 2:
+            if (user.role is None) or not (user.role.is_admin()):
+                bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_NO_ACCESS)
+                return
+            
+            consultation = session.query(Consultation).filter_by(consultation_id=callback_data["consultation_id"]).first()
+            if consultation is None:
+                text = strcontent.MESSAGE_CONSULTATION_UNKNOWN.format(consultation_id=callback_data["consultation_id"])
+                bot.edit_message_text(text, call.message.chat.id, call.message.id)
+                return
+            
+            subaction = callback_data.get("subaction", 1)
+            if subaction == 1:
+                markup = telebot.types.InlineKeyboardMarkup()
+                buttons = [
+                    strcontent.BUTTON_CONFIRM,
+                    strcontent.BUTTON_BACK
+                ]
+                callback_data_builder = InlineKeyboardDataBuilder(session)
+                callback_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=2, subaction=3, consultation_id=callback_data["consultation_id"])
+                callback_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=2, subaction=2, consultation_id=callback_data["consultation_id"])
+                button_ids = callback_data_builder.build()
+                for i in range(len(buttons)):
+                    markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
+                text = ConsultationCommand.__get_notifiction_text(user, consultation)
+
+                text = f"{text}\n\n{strcontent.MESSAGE_CONSULTATION_SYSTEM_MSG}\n{strcontent.MESSAGE_CONSULTATION_QUESTION_MARK_AS_PROCESSED}"
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, parse_mode="MarkdownV2", reply_markup=markup)
+            elif subaction == 2:
+                markup = telebot.types.InlineKeyboardMarkup()
+                callback_data_builder = InlineKeyboardDataBuilder(session)
+                callback_data = callback_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=2, consultation_id=consultation.consultation_id)
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CONSULTATION_MARK_AS_PROCESSED, callback_data=callback_data))
+                text = ConsultationCommand.__get_notifiction_text(user, consultation)
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, parse_mode="MarkdownV2", reply_markup=markup)
+            elif subaction == 3:
+                consultation.is_processed = True
+                session.commit()
+
+                text = ConsultationCommand.__get_notifiction_text(user, consultation)
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, parse_mode="MarkdownV2")
+            else:
+                bot.answer_callback_query(call.id, strcontent.NOTIFICATION_UNKNOWN_COMMAND)
+        else:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_UNKNOWN_COMMAND)
 
     @staticmethod
-    def get_phone_number(bot: Bot, message: telebot.types.Message, form, is_manual_input = False):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
-        session.close()
+    def get_phone_number(bot: Bot, message: telebot.types.Message, session: Session, form, is_manual_input = False):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
-        if db_user is None:
+        if user is None:
             bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
             return
 
@@ -393,13 +478,10 @@ class ConsultationCommand:
             bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
 
     @staticmethod
-    def get_answers_to_survey(bot: Bot, message: telebot.types.Message, form, q):
-        # База данных
-        session = Database.make_session()
-        db_user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
-        session.close()
+    def get_answers_to_survey(bot: Bot, message: telebot.types.Message, session: Session, form, q):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
-        if db_user is None:
+        if user is None:
             bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
             return
         
@@ -447,10 +529,9 @@ class ConsultationCommand:
                 markup = telebot.types.ReplyKeyboardRemove()
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_6, reply_markup=markup)
                 markup = telebot.types.InlineKeyboardMarkup()
-                keyboard_data_builder = InlineKeyboardDataBuilder(bot, session)
-                callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, stage=2, form=form)
+                keyboard_data_builder = InlineKeyboardDataBuilder(session)
+                callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=1, stage=2, form=form)
                 markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION_SELECT_TIME, callback_data=callback_data))
-                session.close()
                 
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_SELECT_TIME_1, reply_markup=markup)
             else:
@@ -490,3 +571,86 @@ class ConsultationCommand:
             ]
         else:
             return []
+        
+    def __get_notifiction_text(user_admin: User, consultation: Consultation):
+        tz_timedelta = datetime.timedelta(hours=user_admin.tz_msc_offset + 3)
+
+        user = consultation.user
+
+        creation_time = consultation.creation_time + tz_timedelta
+        consultation_time = consultation.consultation_time + tz_timedelta
+        consultation_status = strcontent.MESSAGE_CONSULTATION_STATUS_PROCESSED if consultation.is_processed else strcontent.MESSAGE_CONSULTATION_STATUS_NOT_PROCESSED
+
+        embedded_text_list = {
+            'consultation_id': consultation.consultation_id,
+            'creation_time': creation_time.strftime("%d.%m.%y %H:%M"),
+            'consultation_status': consultation_status,
+            'user_fullname': user.get_full_name(middle_name=False),
+            'user_id': user.user_id,
+            'consultation_time': consultation_time.strftime("%d.%m.%y %H:%M"),
+            'user_phone_number': f"+{consultation.phone_number}",
+            'tg_user_id': user.tg_user_id,
+            'lang_level': consultation.lang_level,
+            'hsk_exam': consultation.hsk_exam,
+            'purpose': consultation.purpose,
+            'way_now': consultation.way_now
+        }
+        for i in embedded_text_list:
+            if isinstance(embedded_text_list[i], str):
+                embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
+
+        return strcontent.MESSAGE_CONSULTATION_NOTIFICATION.format(**embedded_text_list)
+        
+
+class AdminPanel:
+    @staticmethod
+    def callback_query_command(bot: Bot, call: telebot.types.CallbackQuery, session: Session, callback_data: dict):
+        user = session.query(User).filter_by(tg_user_id=call.from_user.id).first()
+
+        if user is None:
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_NEED_REGISTRATION)
+            return
+        elif (user.role is None) or not (user.role.is_admin()):
+            bot.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_HAVE_NO_ACCESS)
+            return
+        
+        action = callback_data.get("action", 0)
+
+        if action == 1:
+            pass
+        else:
+            markup = telebot.types.InlineKeyboardMarkup()
+            keyboard_data_builder = InlineKeyboardDataBuilder(session)
+            message_text = strcontent.MESSAGE_ADMIN_PANEL
+
+            if action == 10:
+                notification_admin = session.query(Admin).filter_by(is_consultation_admin=True).first()
+                if notification_admin is None or (notification_admin.user_role_id == user.role.user_role_id):
+                    user.role.admin.is_consultation_admin = not user.role.admin.is_consultation_admin
+                else:
+                    notification_admin.is_consultation_admin = False
+                    user.role.admin.is_consultation_admin = True
+                result = strcontent.MESSAGE_CONSULTATION_NOTIFICATION_ON if user.role.admin.is_consultation_admin else strcontent.MESSAGE_CONSULTATION_NOTIFICATION_OFF
+                message_text = f"{message_text}\n\n{result}"
+                session.commit()
+
+            notification_button_text = strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION_OFF
+            if user.role.admin.is_consultation_admin:
+                notification_button_text = strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION_ON
+
+            buttons = [
+                strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_TIME,
+                notification_button_text,
+                strcontent.BUTTON_BACK
+            ]
+
+            keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1)
+            keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=10)
+            keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_MENU)
+
+
+            button_ids = keyboard_data_builder.build()
+            for i in range(len(buttons)):
+                markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
+
+            bot.edit_message_text(message_text, call.message.chat.id, call.message.id, reply_markup=markup)
