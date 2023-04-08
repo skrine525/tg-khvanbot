@@ -1,7 +1,6 @@
 import telebot
 from typing import Callable
 from botsys.core import strcontent
-from botsys.core.system import generate_random_string
 from botsys.db.model import KeyboardButton
 from botsys.db.behavior import Session, Database
 
@@ -119,6 +118,11 @@ class Bot(telebot.TeleBot):
     def __callback_query_handler(self, call: telebot.types.CallbackQuery):
         session = Database.make_session()
         button = session.query(KeyboardButton).filter_by(button_id=call.data).first()
+
+        if button is None:
+            self.edit_message_text(strcontent.MESSAGE_CONTENT_NOT_AVAILABLE, call.message.chat.id, call.message.id)
+            session.close()
+            return
         
         callback_data = button.data
 

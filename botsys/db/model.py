@@ -10,8 +10,9 @@ class KeyboardButton(Base):
     __tablename__ = 'keyboard_buttons'
 
     # Столбцы
-    button_id = Column(UUID, primary_key=True, default=uuid.uuid4)
-    data = Column(JSON, nullable=False)
+    button_id = Column(UUID, primary_key=True, default=uuid.uuid4)                              # UUID кнопки
+    creation_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)         # Время создания записи
+    data = Column(JSON, nullable=False)                                                         # JSON данные кнопки
 
     # Конструктор
     def __init__(self, data: dict):
@@ -170,9 +171,9 @@ class СonsultationAppointmentTime(Base):
     __tablename__ = 'consultation_appointment_times'
 
     # Столбцы
-    cat_id = Column(BigInteger, primary_key=True)
-    utc_hour = Column(SmallInteger, nullable=False)
-    utc_minute = Column(SmallInteger, nullable=False)
+    cat_id = Column(BigInteger, primary_key=True)                       # Идентификатор времени приёма на консультацию
+    utc_hour = Column(SmallInteger, nullable=False)                     # Час в UTC
+    utc_minute = Column(SmallInteger, nullable=False)                   # Минута в UTC
 
     # Конструктор
     def __init__(self, utc_hour: int, utc_minute: int):
