@@ -128,11 +128,13 @@ class Bot(telebot.TeleBot):
                 try:
                     if callback_data["allowed_user_id"] != call.from_user.id:
                         self.answer_callback_query(call.id, strcontent.NOTIFICATION_YOU_DO_NOT_HAVE_ACCESS_TO_THIS_MENU, True)
+                        session.close()
                         return
                 except KeyError:
                     pass
                 
                 command_info.callback(self, call, session, callback_data)
+                session.close()
                 return
         
         # Закрываем сессию БД

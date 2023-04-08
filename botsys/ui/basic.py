@@ -79,7 +79,7 @@ class RegistrationCommand:
             elif message.text == strcontent.BUTTON_TIMEZONE_MSC:
                 pass
             else:
-                bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_1.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2", reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_1.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2")
                 bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=2, reg_data=reg_data)
                 return
             
