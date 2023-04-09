@@ -1,7 +1,7 @@
 # Модуль, содержащий все строковые константы, используемые в боте
 
 
-MESSAGE_CONTENT_NOT_AVAILABLE = "⛔️ Содержимое недостпно."
+MESSAGE_CONTENT_NOT_AVAILABLE = "⛔️ Содержимое недоступно."
 MESSAGE_COMMANDS_NOT_AVAILABLE_TO_ANONYMOUS_IN_GROUP = "⛔️ Команды недоступны для анонимных в группе пользователей."
 MESSAGE_UNKNOWN_USER = "К сожалению, мы вас не знаем. Нажмите на /start и пройдите регистраци."
 MESSAGE_ALREADY_REGISTERED = "Вы уже зарегистрированы и вам доступны все функции."
