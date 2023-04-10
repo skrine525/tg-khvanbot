@@ -176,10 +176,7 @@ class Bot(telebot.TeleBot):
 
         # Если выход из метода не произошел, значит пользователь не ввел запрос или была получена неизвестная команда запроса
         # Выводим сообщение пользователю
-        bot_username = self.get_me().username
-        help_input_text_message_content = telebot.types.InputTextMessageContent(strcontent.MESSAGE_INLINE_HELP.format(bot_username))
-        help_article = telebot.types.InlineQueryResultArticle('help', 'Помощь в этом чате', input_message_content=help_input_text_message_content)
-        self.answer_inline_query(inline.id, [help_article], switch_pm_text=strcontent.BUTTON_INLINE_HELP_IN_PM, switch_pm_parameter='inlinehelp')
+        self.answer_inline_query(inline.id, [])
 
     # Регистрирует новую текстовую команду
     def register_message_command(self, command: str, callback: Callable, description = '', add_to_menu: bool = False):

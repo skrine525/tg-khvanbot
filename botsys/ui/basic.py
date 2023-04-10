@@ -203,8 +203,6 @@ class ConsultationCommand:
                 
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
-                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER))
-                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(call.message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_1, reply_markup=markup)
                 bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, form=form)
             elif stage == 2:
@@ -444,7 +442,7 @@ class ConsultationCommand:
             bot.answer_callback_query(call.id, strcontent.NOTIFICATION_UNKNOWN_COMMAND)
 
     @staticmethod
-    def get_phone_number(bot: Bot, message: telebot.types.Message, session: Session, form, is_manual_input = False):
+    def get_phone_number(bot: Bot, message: telebot.types.Message, session: Session, form):
         user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
         if user is None:
@@ -456,34 +454,22 @@ class ConsultationCommand:
             markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
             for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                 markup.row(*row)
-            #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
             bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif message.content_type == 'text':
-            if message.text == strcontent.BUTTON_CONSULTATION_TELL_PHONE_NUMBER:
-                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
-                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER, reply_markup=markup)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form, is_manual_input=True)
-            elif message.text == strcontent.BUTTON_CANCEL:
+            if message.text == strcontent.BUTTON_CANCEL:
                 markup = telebot.types.ReplyKeyboardRemove()
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CANCELED, reply_markup=markup)
             else:
-                if is_manual_input:
-                    if len(message.text) == 10 and ConsultationCommand.__validate_phone_number(message.text):
-                        form["phone_number"] = f"7{message.text}"
-                        markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                        for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
-                            markup.row(*row)
-                        #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
-                        bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
-                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
-                    else:
-                        bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER)
-                        bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form, is_manual_input=True)
+                if len(message.text) == 10 and ConsultationCommand.__validate_phone_number(message.text):
+                    form["phone_number"] = f"7{message.text}"
+                    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                    for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
+                        markup.row(*row)
+                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
+                    bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
                 else:
-                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_HELP_1)
+                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER)
                     bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
         else:
             bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_HELP_1)
@@ -504,15 +490,12 @@ class ConsultationCommand:
             if message.text in ConsultationCommand.__get_answers(1):
                 form["lang_level"] = message.text
                 markup = telebot.types.ReplyKeyboardRemove()
-                #markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_3, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=2)
             else:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                     markup.row(*row)
-                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif q == 2:
@@ -529,7 +512,6 @@ class ConsultationCommand:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
                     markup.row(*row)
-                #markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=4)
             else:
@@ -696,6 +678,10 @@ class AdminPanel:
                 else:
                     notification_admin.is_consultation_admin = False
                     user.role.admin.is_consultation_admin = True
+
+                    # Уведомляем предыдущего админа о преостановке уведомлений
+                    admin_tg_user_id = notification_admin.role.user.tg_user_id
+                    bot.send_message(admin_tg_user_id, strcontent.MESSAGE_CONSULTATION_NOTIFICATION_OFF)
                 result = strcontent.MESSAGE_CONSULTATION_NOTIFICATION_ON if user.role.admin.is_consultation_admin else strcontent.MESSAGE_CONSULTATION_NOTIFICATION_OFF
                 message_text = f"{message_text}\n\n{result}"
                 session.commit()
