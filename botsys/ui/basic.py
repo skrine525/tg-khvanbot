@@ -52,7 +52,7 @@ class RegistrationCommand:
             for row in get_keyboard_row_list(timezones, 5):
                 markup.row(*row)
 
-            bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_1.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2", reply_markup=markup)
+            bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_SELECT_TIMEZONE.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2", reply_markup=markup)
             bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=2, reg_data=reg_data)
         elif stage == 2:
             timezone = 3
@@ -79,7 +79,7 @@ class RegistrationCommand:
             elif message.text == strcontent.BUTTON_TIMEZONE_MSC:
                 pass
             else:
-                bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_1.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2")
+                bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_SELECT_TIMEZONE.format(first_name=reg_data['first_name']), parse_mode="MarkdownV2")
                 bot.register_next_step_action(message.chat.id, message.from_user.id, RegistrationCommand.registation, stage=2, reg_data=reg_data)
                 return
             
@@ -99,7 +99,7 @@ class RegistrationCommand:
             # Экранирование спецсимволов MarkdownV2
             timezone_text = message.text.replace("+", "\\+").replace("-", "\\-")
 
-            bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_STAGE_2.format(first_name=reg_data['first_name'], timezone=timezone_text), parse_mode="MarkdownV2", reply_markup=markup)
+            bot.send_message(message.chat.id, strcontent.MESSAGE_REGISTRATION_FINAL.format(first_name=reg_data['first_name'], timezone=timezone_text), parse_mode="MarkdownV2", reply_markup=markup)
             bot.send_message(message.chat.id, strcontent.MESSAGE_OFFER_CONSULTATION, reply_markup=inline_markup)
 
     @staticmethod
@@ -195,16 +195,14 @@ class ConsultationCommand:
 
             stage = callback_data.get("stage", 1)
             form = callback_data.get("form", {})
-            if stage == -1:
-                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_CANCELED, call.message.chat.id, call.message.id)
-            elif stage == 1:
+            if stage == 1:
                 inline_markup = telebot.types.InlineKeyboardMarkup()
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=inline_markup)
-                
-                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
-                bot.send_message(call.message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_1, reply_markup=markup)
-                bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_phone_number, form=form)
+
+                markup = telebot.types.ReplyKeyboardRemove()
+                text = f"{strcontent.MESSAGE_CONSULTATION_START}\n\n{strcontent.MESSAGE_CONSULTATION_TELL_AGE}"
+                bot.send_message(call.message.chat.id, text, reply_markup=markup)
+                bot.register_next_step_action(call.message.chat.id, call.from_user.id, ConsultationCommand.get_age, form=form)
             elif stage == 2:
                 tz_timedelta = datetime.timedelta(hours=user.tz_utc_offset)
 
@@ -242,7 +240,7 @@ class ConsultationCommand:
                     markup.row(*row)
                 #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
 
-                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_2, call.message.chat.id, call.message.id, reply_markup=markup)
+                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_DATE, call.message.chat.id, call.message.id, reply_markup=markup)
             elif stage == 3:
                 tz_utc_offset = user.tz_utc_offset
                 tz_timedelta = datetime.timedelta(hours=tz_utc_offset)
@@ -320,7 +318,7 @@ class ConsultationCommand:
                 #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
                 markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=button_ids[-1]))
 
-                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME_3.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
+                bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
             elif stage == 4:
                 tz_timedelta = datetime.timedelta(hours=user.tz_utc_offset)
 
@@ -356,7 +354,8 @@ class ConsultationCommand:
                 embedded_text_list = {'date': date_text, 'time': time_text, 'user_name': user.get_full_name()}
                 embedded_text_list = {**embedded_text_list, **callback_data["form"]}
                 for i in embedded_text_list:
-                    embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
+                    if(isinstance(embedded_text_list[i], str)):
+                        embedded_text_list[i] = escape_markdownv2_text(embedded_text_list[i])
 
                 text = strcontent.MESSAGE_CONSULTATION_CONFIRMATION.format(**embedded_text_list)
                 bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
@@ -367,7 +366,7 @@ class ConsultationCommand:
                     minute=callback_data["time"]["minute"], second=0, microsecond=0
                 )
                 consultation = Consultation(
-                    user.user_id, callback_data["form"]["phone_number"],
+                    user.user_id, callback_data["form"]["age"], callback_data["form"]["phone_number"],
                     callback_data["form"]["lang_level"], callback_data["form"]["hsk_exam"],
                     callback_data["form"]["purpose"], callback_data["form"]["way_now"], consultation_time
                 )
@@ -442,6 +441,35 @@ class ConsultationCommand:
             bot.answer_callback_query(call.id, strcontent.NOTIFICATION_UNKNOWN_COMMAND)
 
     @staticmethod
+    def get_age(bot: Bot, message: telebot.types.Message, session: Session, form):
+        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
+
+        if user is None:
+            bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
+            return
+        
+        if message.content_type == 'text':
+            age = 0
+            try:
+                age = int(message.text)
+            except ValueError:
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_AGE)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_age, form=form)
+                return
+            
+            if (1 <= age) and (age <= 99):
+                form['age'] = age
+                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONSULTATION_TG_PHONE_NUMBER, request_contact=True))
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER, reply_markup=markup)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
+            else:
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_AGE)
+                bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_age, form=form)
+        else:
+            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_AGE)
+            bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_age, form=form)
+    @staticmethod
     def get_phone_number(bot: Bot, message: telebot.types.Message, session: Session, form):
         user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
@@ -454,7 +482,7 @@ class ConsultationCommand:
             markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
             for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                 markup.row(*row)
-            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
+            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_LANG_LEVEL, reply_markup=markup)
             bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif message.content_type == 'text':
             if message.text == strcontent.BUTTON_CANCEL:
@@ -466,13 +494,13 @@ class ConsultationCommand:
                     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                     for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                         markup.row(*row)
-                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
+                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_LANG_LEVEL, reply_markup=markup)
                     bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
                 else:
                     bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER)
                     bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
         else:
-            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_HELP_1)
+            bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TELL_PHONE_NUMBER)
             bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_phone_number, form=form)
 
     @staticmethod
@@ -490,18 +518,19 @@ class ConsultationCommand:
             if message.text in ConsultationCommand.__get_answers(1):
                 form["lang_level"] = message.text
                 markup = telebot.types.ReplyKeyboardRemove()
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_3, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_HSK_EXAM, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=2)
             else:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                     markup.row(*row)
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_2, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_LANG_LEVEL, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
         elif q == 2:
             if len(message.text) <= 100:
                 form['hsk_exam'] = message.text
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_4)
+                markup = telebot.types.ReplyKeyboardRemove()
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_PURPOSE, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=3)
             else:
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
@@ -512,7 +541,7 @@ class ConsultationCommand:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
                     markup.row(*row)
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_WAY_NOW, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=4)
             else:
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_TOO_LONG_ANSWER)
@@ -521,18 +550,18 @@ class ConsultationCommand:
             if message.text in ConsultationCommand.__get_answers(2):
                 form['way_now'] = message.text
                 markup = telebot.types.ReplyKeyboardRemove()
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_6, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_SELECT_TIME, reply_markup=markup)
                 markup = telebot.types.InlineKeyboardMarkup()
                 keyboard_data_builder = InlineKeyboardDataBuilder(session)
                 callback_data = keyboard_data_builder.build_single_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_CONSULTATION, action=1, stage=2, form=form)
                 markup.add(telebot.types.InlineKeyboardButton(text=strcontent.BUTTON_CONSULTATION_SELECT_TIME, callback_data=callback_data))
                 
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_SELECT_TIME_1, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_MENU_SELECT_TIME, reply_markup=markup)
             else:
                 markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                 for row in get_keyboard_row_list(ConsultationCommand.__get_answers(2), 2):
                     markup.row(*row)
-                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_STAGE_5, reply_markup=markup)
+                bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_WAY_NOW, reply_markup=markup)
                 bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=4)
         else:
             markup = telebot.types.ReplyKeyboardRemove()
@@ -580,6 +609,7 @@ class ConsultationCommand:
             'creation_time': creation_time.strftime("%d.%m.%y %H:%M"),
             'consultation_status': consultation_status,
             'user_fullname': user.get_full_name(middle_name=False),
+            'age': consultation.age,
             'user_id': user.user_id,
             'consultation_time': consultation_time.strftime("%d.%m.%y %H:%M"),
             'user_phone_number': f"+{consultation.phone_number}",

@@ -35,7 +35,6 @@ class User(Base):
     middle_name = Column(VARCHAR(20), default=None)                                             # Отчество пользователя
     registration_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время регистрации пользователя
     tz_utc_offset = Column(SmallInteger, nullable=False, default=0)                             # Часовой пояс относительно UTC
-    #is_deactivated = Column(Boolean, nullable=False, default=False)                             # Статус деактивации аккаунта
 
     # Отношения
     role = relationship('UserRole', backref='user', uselist=False, cascade="all,delete")
@@ -121,19 +120,21 @@ class Consultation(Base):
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False)               # Идентификатор пользователя
     creation_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)     # Время создания записи на консультацию
     is_processed = Column(Boolean, nullable=False, default=False)                           # Статус консультации
-    phone_number = Column(VARCHAR(20), nullable=False)                                      # Ответ на вопрос "Номер телефона"
-    lang_level = Column(VARCHAR(50), nullable=False)                                        # Ответ на вопрос "Уровень языка"
-    hsk_exam = Column(VARCHAR(100), nullable=False)                                         # Ответ на вопрос "Экзамен HSK"
-    purpose = Column(VARCHAR(100), nullable=False)                                          # Ответ на вопрос "Цель изучения"
-    way_now = Column(VARCHAR(50), nullable=False)                                           # Ответ на вопрос "Способ изучения сейчас"
-    consultation_time = Column(TIMESTAMP, nullable=False)                                   # Удобное время консультации
+    age = Column(SmallInteger, nullable=False)                                              # Анкета: Возраст
+    phone_number = Column(VARCHAR(20), nullable=False)                                      # Анкета: Номер телефона
+    lang_level = Column(VARCHAR(50), nullable=False)                                        # Анкета: Уровень языка
+    hsk_exam = Column(VARCHAR(100), nullable=False)                                         # Анкета: Экзамен HSK
+    purpose = Column(VARCHAR(100), nullable=False)                                          # Анкета: Цель изучения
+    way_now = Column(VARCHAR(50), nullable=False)                                           # Анкета: Способ изучения сейчас
+    consultation_time = Column(TIMESTAMP, nullable=False)                                   # Анкета: Время консультации
 
     # Отношения
     notification = relationship("ConsultationNotification", backref="consultation", uselist=False, cascade="all,delete")
 
     # Конструктор
-    def __init__(self, user_id: int, phone_number:str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
+    def __init__(self, user_id: int, age: int, phone_number: str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
         self.user_id = user_id
+        self.age = age
         self.phone_number = phone_number
         self.lang_level = lang_level
         self.hsk_exam = hsk_exam
