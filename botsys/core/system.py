@@ -51,7 +51,6 @@ def escape_markdownv2_text(text:str):
 # Функция инициализации системных директорий
 def initdirs():
     # log/
-    print("+")
     if not os.path.exists(SystemPaths.LOG_DIR):
         os.mkdir(SystemPaths.LOG_DIR)
 
