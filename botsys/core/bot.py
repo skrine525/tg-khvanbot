@@ -1,8 +1,19 @@
-import telebot
+import telebot, logging
+import botsys.core.strcontent as strcontent
 from typing import Callable
-from botsys.core import strcontent
 from botsys.db.model import KeyboardButton
+from botsys.core.system import SystemPaths
 from botsys.db.behavior import Session, Database
+
+
+# Настройка логирования
+logger = telebot.logger
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('[%(asctime)s] [%(filename)s:%(lineno)d %(threadName)s] [%(name)s] [%(levelname)s] - %(message)s')
+file_handler = logging.FileHandler(SystemPaths.LOG_FILE, encoding='utf-8')
+file_handler.setFormatter(formatter)
+logger.handlers.clear()
+logger.addHandler(file_handler)
 
 
 # Билдер callack данных для кнопок

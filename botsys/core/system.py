@@ -4,6 +4,8 @@ import random, string, os, json
 class SystemPaths:
     # Директории
     ROOT_DIR = os.getcwd()
+    LOG_DIR = os.path.join(ROOT_DIR, 'log')
+    LOG_FILE = os.path.join(LOG_DIR, 'bot.log')
 
 # Генерация случайной строки
 def generate_random_string(length, uppercase=True, lowercase=True, numbers=True):
@@ -47,7 +49,7 @@ def escape_markdownv2_text(text:str):
     return escaped_text
 
 # Функция инициализации системных директорий
-def initdir():
-    # tmp/
-    if not os.path.exists(SystemPaths.TMP_DIR):
-        os.mkdir(SystemPaths.TMP_DIR)
+def initdirs():
+    # log/
+    if not os.path.exists(SystemPaths.LOG_DIR):
+        os.mkdir(SystemPaths.LOG_DIR)

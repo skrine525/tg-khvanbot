@@ -1,5 +1,5 @@
 import telebot, datetime
-from botsys.core import strcontent
+import botsys.core.strcontent as strcontent
 from botsys.core.system import get_keyboard_row_list, escape_markdownv2_text
 from botsys.core.bot import Bot, InlineKeyboardDataBuilder
 from botsys.db.model import User, Consultation, СonsultationAppointmentTime, Admin, ConsultationNotification

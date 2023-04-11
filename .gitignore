@@ -10,7 +10,6 @@ __pycache__/
 /alembic.ini
 
 # Bot
-/tmp
-/media
+/log
 /config.py
 /database.db

@@ -1,4 +1,4 @@
-from botsys.core.system import initdir
+from botsys.core.system import initdirs
 from botsys.core.bot import Bot
 from botsys.commands import register_commands
 from botsys.db.behavior import Database
@@ -6,8 +6,8 @@ from config import BOT_TOKEN, SQLALCHEMY_URL
 
 
 # Инициализация разных компонентов
-#initdir()
-Database.create_engine(SQLALCHEMY_URL)
+initdirs()                                              # Инициализация системных директорий
+Database.create_engine(SQLALCHEMY_URL)                  # Инициализация движка SQLAlchemy
 
 # Инициализация бота
 bot = Bot(BOT_TOKEN)
