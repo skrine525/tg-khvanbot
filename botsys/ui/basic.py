@@ -2,7 +2,7 @@ import telebot, datetime
 import botsys.core.strcontent as strcontent
 from botsys.core.system import get_keyboard_row_list, escape_markdownv2_text
 from botsys.core.bot import Bot, InlineKeyboardDataBuilder
-from botsys.db.model import User, Consultation, СonsultationAppointmentTime, Admin, ConsultationNotification
+from botsys.db.model import User, Consultation, ConsultationAppointmentTime, Admin, ConsultationNotification
 from sqlalchemy.orm.session import Session
 
 
@@ -208,26 +208,52 @@ class ConsultationCommand:
 
                 utc_time = datetime.datetime.utcnow()
                 user_time = utc_time + tz_timedelta
-                interval = datetime.timedelta(days=1)
+
+                # Запрос доступного времени для записи
+                time_relevance_filter = utc_time + datetime.timedelta(hours=2)      # Фильтр, ограничивающий запись на ближайшие консультации
+                time_start_filter = datetime.datetime(
+                    year=user_time.year,
+                    month=user_time.month,
+                    day=user_time.day + 1,
+                    hour=0, minute=0,
+                    second=0, microsecond=0
+                )
+                time_start_filter = time_start_filter - tz_timedelta
+                time_end_filter = time_start_filter + datetime.timedelta(days=7)
+                appointment_times = session.query(ConsultationAppointmentTime).filter(
+                    time_relevance_filter <= ConsultationAppointmentTime.appointment_time,
+                    time_start_filter <= ConsultationAppointmentTime.appointment_time,
+                    ConsultationAppointmentTime.appointment_time < time_end_filter,
+                    ConsultationAppointmentTime.consultation_id == None
+                ).order_by(ConsultationAppointmentTime.appointment_time)
+
+                appointment_dates = []
+                appointment_times = appointment_times.all()
+                for time in appointment_times:
+                    time_tz = time.appointment_time + tz_timedelta
+                    date = {"day": time_tz.day, "month": time_tz.month, "year": time_tz.year}
+                    if not (date in appointment_dates):
+                        appointment_dates.append(date)
 
                 callback_data_builder = InlineKeyboardDataBuilder(session)
                 button_text = []
 
-                for i in range(7):
-                    user_time = user_time + interval
-
+                for date in appointment_dates:
                     callback_data = {
                         "command": callback_data["command"],
                         "action": 1,
                         "stage": 3,
                         "form": callback_data["form"],
-                        "time": {"day": user_time.day, "month": user_time.month, "year": user_time.year}
+                        "date_tz": date
                     }
                     callback_data_builder.add_callback_data(**callback_data)
 
-                    date_text = f"0{user_time.day}" if user_time.day < 10 else f"{user_time.day}"
-                    date_text = f"{date_text}.0{user_time.month}" if user_time.month < 10 else f"{date_text}.{user_time.month}"
+                    date_day = date["day"]
+                    date_month = date["month"]
+                    date_text = f"0{date_day}" if date_day < 10 else f"{date_day}"
+                    date_text = f"{date_text}.0{date_month}" if date_month < 10 else f"{date_text}.{date_month}"
                     button_text.append(date_text)
+
                 callback_data_builder.add_callback_data(command=callback_data["command"], action=-1)
                 button_ids = callback_data_builder.build()
 
@@ -238,71 +264,55 @@ class ConsultationCommand:
                 markup = telebot.types.InlineKeyboardMarkup()
                 for row in get_keyboard_row_list(buttons):
                     markup.row(*row)
-                #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
 
                 bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_DATE, call.message.chat.id, call.message.id, reply_markup=markup)
             elif stage == 3:
-                tz_utc_offset = user.tz_utc_offset
-                tz_timedelta = datetime.timedelta(hours=tz_utc_offset)
+                tz_timedelta = datetime.timedelta(hours=user.tz_utc_offset)
 
                 utc_time = datetime.datetime.utcnow()
 
-                date_day = callback_data["time"]["day"]
-                date_month = callback_data["time"]["month"]
-                date_year = callback_data["time"]["year"]
-                date_text = f"0{date_day}" if date_day < 10 else f"{date_day}"
-                date_text = f"{date_text}\\.0{date_month}" if date_month < 10 else f"{date_text}\\.{date_month}"
+                # Запрос доступного времени для записи
+                time_relevance_filter = utc_time + datetime.timedelta(hours=2)      # Фильтр, ограничивающий запись на ближайшие консультации
+                time_start_filter = datetime.datetime(
+                    year=callback_data["date_tz"]["year"],
+                    month=callback_data["date_tz"]["month"],
+                    day=callback_data["date_tz"]["day"],
+                    hour=0, minute=0,
+                    second=0, microsecond=0
+                )
+                time_start_filter = time_start_filter - tz_timedelta
+                time_end_filter = time_start_filter + datetime.timedelta(hours=24)
+                appointment_times = session.query(ConsultationAppointmentTime).filter(
+                    time_relevance_filter <= ConsultationAppointmentTime.appointment_time,
+                    time_start_filter <= ConsultationAppointmentTime.appointment_time,
+                    ConsultationAppointmentTime.appointment_time < time_end_filter,
+                    ConsultationAppointmentTime.consultation_id == None
+                ).order_by(ConsultationAppointmentTime.appointment_time)
 
                 callback_data_builder = InlineKeyboardDataBuilder(session)
                 button_text = []
-                appointment_times_utc = session.query(СonsultationAppointmentTime).order_by(СonsultationAppointmentTime.utc_hour, СonsultationAppointmentTime.utc_minute).all()
 
-                appointment_times = []
-                for time in appointment_times_utc:
-                    msc_hour = time.utc_hour + tz_utc_offset
-                    if msc_hour > 23:
-                        msc_hour = msc_hour - 24
-                    appointment_times.append([msc_hour, time.utc_minute])
+                date_day = callback_data["date_tz"]["day"]
+                date_month = callback_data["date_tz"]["month"]
+                date_text = f"0{date_day}" if date_day < 10 else f"{date_day}"
+                date_text = f"{date_text}\\.0{date_month}" if date_month < 10 else f"{date_text}\\.{date_month}"
+    
+                appointment_times = appointment_times.all()
+                for time in appointment_times:
+                    display_time = time.appointment_time + tz_timedelta
 
-                # Сортируем время по возврастанию
-                for i in range(len(appointment_times)):
-                    for j in range(i, len(appointment_times)):
-                        if (appointment_times[i][0] > appointment_times[j][0]) or ((appointment_times[i][0] == appointment_times[j][0]) and (appointment_times[i][1] > appointment_times[j][1])):
-                            tmp = appointment_times[i]
-                            appointment_times[i] = appointment_times[j]
-                            appointment_times[j] = tmp
+                    time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
+                    time_text = f"{time_text}:0{display_time.minute}" if display_time.minute < 10 else f"{time_text}:{display_time.minute}"
+                    button_text.append(time_text)
 
-                
-
-                for appointment_time in appointment_times:
-                    display_hour = appointment_time[0]
-                    display_minute = appointment_time[1]
-
-                    user_utc_time = datetime.datetime(
-                        year=date_year, month=date_month, day=date_day,
-                        hour=display_hour, minute=display_minute
-                    )
-                    user_utc_time = user_utc_time - tz_timedelta
-
-                    if user_utc_time > utc_time:
-                        time_text = f"0{display_hour}" if display_hour < 10 else f"{display_hour}"
-                        time_text = f"{time_text}:0{display_minute}" if display_minute < 10 else f"{time_text}:{display_minute}"
-                        button_text.append(time_text)
-
-                        callback_data = {
-                            "command": callback_data["command"],
-                            "action": 1,
-                            "stage": 4,
-                            "form": callback_data["form"],
-                            "time": {
-                                "day": user_utc_time.day,
-                                "month": user_utc_time.month,
-                                "year": user_utc_time.year,
-                                "hour": user_utc_time.hour,
-                                "minute": user_utc_time.minute
-                            }
-                        }
-                        callback_data_builder.add_callback_data(**callback_data)
+                    callback_data = {
+                        "command": callback_data["command"],
+                        "action": 1,
+                        "stage": 4,
+                        "form": callback_data["form"],
+                        "cat_id": time.cat_id
+                    }
+                    callback_data_builder.add_callback_data(**callback_data)
 
                 callback_data_builder.add_callback_data(command=callback_data["command"], action=1, stage=2, form=callback_data["form"])  
                 button_ids = callback_data_builder.build()
@@ -320,13 +330,13 @@ class ConsultationCommand:
             elif stage == 4:
                 tz_timedelta = datetime.timedelta(hours=user.tz_utc_offset)
 
-                user_utc_time = datetime.datetime(
-                    year=callback_data["time"]["year"], month=callback_data["time"]["month"],
-                    day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
-                    minute=callback_data["time"]["minute"], second=0, microsecond=0
-                )
+                cat = session.get(ConsultationAppointmentTime, callback_data['cat_id'])
+                if (cat is None) or (cat.consultation_id is not None):
+                    text = strcontent.NOTIFICATION_CONSULTATION_APPOINTMENT_NO_LONGER_AVAILABLE
+                    bot.answer_callback_query(call.id, text, show_alert=True)
+                    return
 
-                display_time = user_utc_time + tz_timedelta
+                display_time = cat.appointment_time + tz_timedelta
                 date_text = f"0{display_time.day}" if display_time.day < 10 else f"{display_time.day}"
                 date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
                 time_text = f"0{display_time.hour}" if display_time.hour < 10 else f"{display_time.hour}"
@@ -335,7 +345,7 @@ class ConsultationCommand:
                 callback_data_builder = InlineKeyboardDataBuilder(session)
                 callback_data_builder.add_callback_data(
                     command=callback_data["command"], action=1, stage=5,
-                    form=callback_data["form"], time=callback_data["time"]
+                    form=callback_data["form"], cat_id=callback_data["cat_id"]
                 )
                 callback_data_builder.add_callback_data(
                     command=callback_data["command"], action=1, stage=2,
@@ -358,18 +368,21 @@ class ConsultationCommand:
                 text = strcontent.MESSAGE_CONSULTATION_CONFIRMATION.format(**embedded_text_list)
                 bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
             elif stage == 5:
-                consultation_time = datetime.datetime(
-                    year=callback_data["time"]["year"], month=callback_data["time"]["month"],
-                    day=callback_data["time"]["day"], hour=callback_data["time"]["hour"],
-                    minute=callback_data["time"]["minute"], second=0, microsecond=0
-                )
                 consultation = Consultation(
                     user.user_id, callback_data["form"]["age"], callback_data["form"]["phone_number"],
                     callback_data["form"]["lang_level"], callback_data["form"]["hsk_exam"],
-                    callback_data["form"]["purpose"], callback_data["form"]["way_now"], consultation_time
+                    callback_data["form"]["purpose"], callback_data["form"]["way_now"]
                 )
 
+                cat = session.get(ConsultationAppointmentTime, callback_data['cat_id'])
+                if (cat is None) or (cat.consultation_id is not None):
+                    text = strcontent.NOTIFICATION_CONSULTATION_APPOINTMENT_NO_LONGER_AVAILABLE
+                    bot.answer_callback_query(call.id, text, show_alert=True)
+                    return
+
                 session.add(consultation)
+                session.commit()
+                cat.consultation_id = consultation.consultation_id
                 session.commit()
 
                 text = strcontent.MESSAGE_CONSULTATION_SENT.format(consultation_id=consultation.consultation_id)
@@ -599,8 +612,12 @@ class ConsultationCommand:
         user = consultation.user
 
         creation_time = consultation.creation_time + tz_timedelta
-        consultation_time = consultation.consultation_time + tz_timedelta
         consultation_status = strcontent.MESSAGE_CONSULTATION_STATUS_PROCESSED if consultation.is_processed else strcontent.MESSAGE_CONSULTATION_STATUS_NOT_PROCESSED
+        consultation_time = consultation.appointment_time.appointment_time + tz_timedelta
+        if consultation_time is None:
+            consultation_time_text = strcontent.MESSAGE_CONSULTATION_NOTIFICATION_APPOINTMENT_NOT_GIVEN
+        else:
+            consultation_time_text = consultation_time.strftime("%d.%m.%y %H:%M")
 
         embedded_text_list = {
             'consultation_id': consultation.consultation_id,
@@ -609,7 +626,7 @@ class ConsultationCommand:
             'user_fullname': user.get_full_name(middle_name=False),
             'age': consultation.age,
             'user_id': user.user_id,
-            'consultation_time': consultation_time.strftime("%d.%m.%y %H:%M"),
+            'consultation_time': consultation_time_text,
             'user_phone_number': f"+{consultation.phone_number}",
             'tg_user_id': user.tg_user_id,
             'lang_level': consultation.lang_level,
@@ -671,19 +688,19 @@ class AdminPanel:
                 msc_timedelta = datetime.timedelta(hours=3)
 
                 # Запрос удаления старого времени
-                time_filter_start = datetime.datetime(
+                time_start_filter = datetime.datetime(
                     year=callback_data['date_msc']['year'],
                     month=callback_data['date_msc']['month'],
                     day=callback_data['date_msc']['day'],
                     hour=0, minute=0,
                     second=0, microsecond=0
                 )
-                time_filter_start = time_filter_start - msc_timedelta
-                time_filter_end = time_filter_start + datetime.timedelta(hours=24)
-                deleting_query = session.query(СonsultationAppointmentTime)
+                time_start_filter = time_start_filter - msc_timedelta
+                time_end_filter = time_start_filter + datetime.timedelta(hours=24)
+                deleting_query = session.query(ConsultationAppointmentTime)
                 deleting_query = deleting_query.filter(
-                    time_filter_start <= СonsultationAppointmentTime.appointment_time,
-                    СonsultationAppointmentTime.appointment_time < time_filter_end
+                    time_start_filter <= ConsultationAppointmentTime.appointment_time,
+                    ConsultationAppointmentTime.appointment_time < time_end_filter
                 )
                 deleting_query.delete()
 
@@ -700,7 +717,7 @@ class AdminPanel:
                     appointment_times.append(appointment_time)
 
                 for appointment_time in appointment_times:
-                    cat = СonsultationAppointmentTime(appointment_time)
+                    cat = ConsultationAppointmentTime(appointment_time)
                     session.add(cat)
                 session.commit()
 
@@ -727,19 +744,19 @@ class AdminPanel:
                 date_msc = callback_data['date_msc']
 
                 # Получение данных из бд за конкретную дату
-                time_filter_start = datetime.datetime(
+                time_start_filter = datetime.datetime(
                     year=date_msc['year'],
                     month=date_msc['month'],
                     day=date_msc['day'],
                     hour=0, minute=0,
                     second=0, microsecond=0
                 )
-                time_filter_start = time_filter_start - msc_timedelta
-                time_filter_end = time_filter_start + datetime.timedelta(hours=24)
-                appointment_times = session.query(СonsultationAppointmentTime)
+                time_start_filter = time_start_filter - msc_timedelta
+                time_end_filter = time_start_filter + datetime.timedelta(hours=24)
+                appointment_times = session.query(ConsultationAppointmentTime)
                 appointment_times = appointment_times.filter(
-                    time_filter_start <= СonsultationAppointmentTime.appointment_time,
-                    СonsultationAppointmentTime.appointment_time < time_filter_end
+                    time_start_filter <= ConsultationAppointmentTime.appointment_time,
+                    ConsultationAppointmentTime.appointment_time < time_end_filter
                 )
                 appointment_times = appointment_times.all()
 
@@ -792,19 +809,19 @@ class AdminPanel:
                     display_time = appointment_time + msc_timedelta
 
                     # Получение данных из бд за конкретную дату
-                    time_filter_start = datetime.datetime(
+                    time_start_filter = datetime.datetime(
                         year=display_time.year,
                         month=display_time.month,
                         day=display_time.day,
                         hour=0, minute=0,
                         second=0, microsecond=0
                     )
-                    time_filter_start = time_filter_start - msc_timedelta
-                    time_filter_end = time_filter_start + datetime.timedelta(hours=24)
-                    appointment_times = session.query(СonsultationAppointmentTime)
+                    time_start_filter = time_start_filter - msc_timedelta
+                    time_end_filter = time_start_filter + datetime.timedelta(hours=24)
+                    appointment_times = session.query(ConsultationAppointmentTime)
                     appointment_times = appointment_times.filter(
-                        time_filter_start <= СonsultationAppointmentTime.appointment_time,
-                        СonsultationAppointmentTime.appointment_time < time_filter_end
+                        time_start_filter <= ConsultationAppointmentTime.appointment_time,
+                        ConsultationAppointmentTime.appointment_time < time_end_filter
                     )
                     date_status = strcontent.TEXT_APPOINTMENT_DATE_STATUS_NOT_OK
                     if appointment_times.count() > 0:

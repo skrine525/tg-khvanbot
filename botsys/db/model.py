@@ -120,14 +120,14 @@ class Consultation(Base):
     lang_level = Column(VARCHAR(50), nullable=False)                                        # Анкета: Уровень языка
     hsk_exam = Column(VARCHAR(100), nullable=False)                                         # Анкета: Экзамен HSK
     purpose = Column(VARCHAR(100), nullable=False)                                          # Анкета: Цель изучения
-    way_now = Column(VARCHAR(50), nullable=False)                                           # Анкета: Способ изучения сейчас                               # Анкета: Время консультации
+    way_now = Column(VARCHAR(50), nullable=False)                                           # Анкета: Способ изучения сейчас
 
     # Отношения
     notification = relationship("ConsultationNotification", backref="consultation", uselist=False, cascade="all,delete")
-    appointment_time = relationship("СonsultationAppointmentTime", backref="consultation", uselist=False)
+    appointment_time = relationship("ConsultationAppointmentTime", backref="consultation", uselist=False)
 
     # Конструктор
-    def __init__(self, user_id: int, age: int, phone_number: str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
+    def __init__(self, user_id: int, age: int, phone_number: str, lang_level: str, hsk_exam: str, purpose: str, way_now: str):
         self.user_id = user_id
         self.age = age
         self.phone_number = phone_number
@@ -135,7 +135,6 @@ class Consultation(Base):
         self.hsk_exam = hsk_exam
         self.purpose = purpose
         self.way_now = way_now
-        self.consultation_time = consultation_time
 
     # Преобразование в строку
     def __repr__(self):
@@ -163,7 +162,7 @@ class ConsultationNotification(Base):
         return f"<ConsultationNotification({self.cn_id}, {self.consultation_id})>"
     
 # Таблица списка времён, которые доступны во время записи на консультацию
-class СonsultationAppointmentTime(Base):
+class ConsultationAppointmentTime(Base):
     __tablename__ = 'consultation_appointment_times'
 
     # Столбцы
@@ -177,4 +176,4 @@ class СonsultationAppointmentTime(Base):
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<СonsultationAppointmentTime({self.cat_id}, {self.consultation_id}, '{self.appointment_time}')>"
+        return f"<ConsultationAppointmentTime({self.cat_id}, {self.consultation_id}, '{self.appointment_time}')>"
