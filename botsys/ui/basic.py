@@ -305,7 +305,6 @@ class ConsultationCommand:
                         callback_data_builder.add_callback_data(**callback_data)
 
                 callback_data_builder.add_callback_data(command=callback_data["command"], action=1, stage=2, form=callback_data["form"])  
-                #callback_data_builder.add_callback_data(command=callback_data["command"], stage=-1)
                 button_ids = callback_data_builder.build()
 
                 buttons = []
@@ -315,7 +314,6 @@ class ConsultationCommand:
                 markup = telebot.types.InlineKeyboardMarkup()
                 for row in get_keyboard_row_list(buttons):
                     markup.row(*row)
-                #markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_CANCEL, callback_data=button_ids[-1]))
                 markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=button_ids[-1]))
 
                 bot.edit_message_text(strcontent.MESSAGE_CONSULTATION_SELECT_TIME.format(date=date_text), call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="MarkdownV2")
@@ -640,61 +638,209 @@ class AdminPanel:
         
         action = callback_data.get("action", 0)
 
-        if action == 1:
+        if action == -1:
+            text = strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES_CLOSED
+            bot.edit_message_text(text, call.message.chat.id, call.message.id)
+        elif action == 1:
             subaction = callback_data.get("subaction", 0)
 
             if subaction == 1:
+                bot.clear_step_action(call.message.chat.id, call.from_user.id)
+
                 markup = telebot.types.InlineKeyboardMarkup()
                 bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=markup)
-                markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-                markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CLOSE))
-                bot.send_message(call.message.chat.id, strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES, reply_markup=markup)
-                bot.register_next_step_action(call.message.chat.id, call.from_user.id, AdminPanel.get_appointment_time)
-            else:
-                appointment_times = session.query(СonsultationAppointmentTime).order_by(СonsultationAppointmentTime.utc_hour, СonsultationAppointmentTime.utc_minute).all()
 
-                # Получаем двухмерный массив времени в МСК
-                appointment_times_msc = []
-                for time in appointment_times:
-                    msc_hour = time.utc_hour + 3
-                    if msc_hour > 23:
-                        msc_hour = msc_hour - 24
-                    appointment_times_msc.append([msc_hour, time.utc_minute])
+                date_msc = callback_data['date_msc']
+                date_msc_day = date_msc['day']
+                date_msc_month = date_msc['month']
+                date_text = f"0{date_msc_day}" if date_msc_day < 10 else f"{date_msc_day}"
+                date_text = f"{date_text}.0{date_msc_month}" if date_msc_month < 10 else f"{date_text}.{date_msc_month}"
 
-                # Сортируем время по возврастанию
-                for i in range(len(appointment_times_msc)):
-                    for j in range(i, len(appointment_times_msc)):
-                        if (appointment_times_msc[i][0] > appointment_times_msc[j][0]) or ((appointment_times_msc[i][0] == appointment_times_msc[j][0]) and (appointment_times_msc[i][1] > appointment_times_msc[j][1])):
-                            tmp = appointment_times_msc[i]
-                            appointment_times_msc[i] = appointment_times_msc[j]
-                            appointment_times_msc[j] = tmp
+                keyboard_data_builder = InlineKeyboardDataBuilder(session)
+                callback_data = {
+                    'command': strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL,
+                    'action': 1
+                }
+                callback_data = keyboard_data_builder.build_single_callback_data(**callback_data)
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=callback_data))
 
-                appointment_times_text = ""
-                for i in appointment_times_msc:
-                    hour = i[0]
-                    minute = i[1]
-                    hour_text = f"0{hour}" if hour < 10 else str(hour)
-                    minute_text = f"0{minute}" if minute < 10 else str(minute)
-                    appointment_times_text = f"{hour_text}:{minute_text}" if appointment_times_text == "" else f"{appointment_times_text} {hour_text}:{minute_text}"
+                text = strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES.format(date=date_text)
+                bot.send_message(call.message.chat.id, text, reply_markup=markup)
+                bot.register_next_step_action(call.message.chat.id, call.from_user.id, AdminPanel.get_appointment_time, date_msc=date_msc)
+            elif subaction == 2:
+                msc_timedelta = datetime.timedelta(hours=3)
 
-                text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_TIMES
-                text = f"{text}\n{appointment_times_text}"
+                # Запрос удаления старого времени
+                time_filter_start = datetime.datetime(
+                    year=callback_data['date_msc']['year'],
+                    month=callback_data['date_msc']['month'],
+                    day=callback_data['date_msc']['day'],
+                    hour=0, minute=0,
+                    second=0, microsecond=0
+                )
+                time_filter_start = time_filter_start - msc_timedelta
+                time_filter_end = time_filter_start + datetime.timedelta(hours=24)
+                deleting_query = session.query(СonsultationAppointmentTime)
+                deleting_query = deleting_query.filter(
+                    time_filter_start <= СonsultationAppointmentTime.appointment_time,
+                    СonsultationAppointmentTime.appointment_time < time_filter_end
+                )
+                deleting_query.delete()
 
+                appointment_times = []
+                for i in callback_data['appointment_times_msc']:
+                    appointment_time = datetime.datetime(
+                        year=callback_data['date_msc']['year'],
+                        month=callback_data['date_msc']['month'],
+                        day=callback_data['date_msc']['day'],
+                        hour=i[0], minute=i[1],
+                        second=0, microsecond=0
+                    )
+                    appointment_time = appointment_time - msc_timedelta
+                    appointment_times.append(appointment_time)
+
+                for appointment_time in appointment_times:
+                    cat = СonsultationAppointmentTime(appointment_time)
+                    session.add(cat)
+                session.commit()
+
+                text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGED
                 markup = telebot.types.InlineKeyboardMarkup()
                 keyboard_data_builder = InlineKeyboardDataBuilder(session)
-
+                
                 buttons = [
-                    strcontent.BUTTON_ADMIN_PANEL_CHANGE_CONSULTATION_APPOINTMENT_TIMES,
-                    strcontent.BUTTON_BACK
+                    strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_TIME,
+                    strcontent.BUTTON_CONTINUE
                 ]
 
-                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1, subaction=1)
-                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL)
+                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1)
+                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=-1)
 
                 button_ids = keyboard_data_builder.build()
                 for i in range(len(buttons)):
                     markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
 
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
+            elif subaction == 3:
+                msc_timedelta = datetime.timedelta(hours=3)
+
+                date_msc = callback_data['date_msc']
+
+                # Получение данных из бд за конкретную дату
+                time_filter_start = datetime.datetime(
+                    year=date_msc['year'],
+                    month=date_msc['month'],
+                    day=date_msc['day'],
+                    hour=0, minute=0,
+                    second=0, microsecond=0
+                )
+                time_filter_start = time_filter_start - msc_timedelta
+                time_filter_end = time_filter_start + datetime.timedelta(hours=24)
+                appointment_times = session.query(СonsultationAppointmentTime)
+                appointment_times = appointment_times.filter(
+                    time_filter_start <= СonsultationAppointmentTime.appointment_time,
+                    СonsultationAppointmentTime.appointment_time < time_filter_end
+                )
+                appointment_times = appointment_times.all()
+
+                appointment_times_text = ""
+                if(len(appointment_times) > 0):
+                    for time in appointment_times:
+                        time_msc = time.appointment_time + msc_timedelta
+                        hour = time_msc.hour
+                        minute = time_msc.minute
+                        hour_text = f"0{hour}" if hour < 10 else str(hour)
+                        minute_text = f"0{minute}" if minute < 10 else str(minute)
+                        appointment_times_text = f"{hour_text}:{minute_text}" if appointment_times_text == "" else f"{appointment_times_text} {hour_text}:{minute_text}"
+                else:
+                    appointment_times_text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_NOT_GIVEN
+
+                date_msc_day = date_msc['day']
+                date_msc_month = date_msc['month']
+                date_text = f"0{date_msc_day}" if date_msc_day < 10 else f"{date_msc_day}"
+                date_text = f"{date_text}.0{date_msc_month}" if date_msc_month < 10 else f"{date_text}.{date_msc_month}"
+
+                markup = telebot.types.InlineKeyboardMarkup()
+                keyboard_data_builder = InlineKeyboardDataBuilder(session)
+                
+                buttons = [
+                    strcontent.BUTTON_ADMIN_PANEL_CHANGE_CONSULTATION_APPOINTMENT_TIMES,
+                    strcontent.BUTTON_BACK
+                ]
+
+                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1, subaction=1, date_msc=date_msc)
+                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1)
+
+                button_ids = keyboard_data_builder.build()
+                for i in range(len(buttons)):
+                    markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
+
+                text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_INFO
+                text = text.format(appointment_times=appointment_times_text, date=date_text)
+                bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
+            else:
+                bot.clear_step_action(call.message.chat.id, call.from_user.id)
+                msc_timedelta = datetime.timedelta(hours=3)
+
+                interval = datetime.timedelta(days=1)
+                appointment_time = datetime.datetime.utcnow()
+
+                keyboard_data_builder = InlineKeyboardDataBuilder(session)
+                button_text = []
+
+                for i in range(14):
+                    display_time = appointment_time + msc_timedelta
+
+                    # Получение данных из бд за конкретную дату
+                    time_filter_start = datetime.datetime(
+                        year=display_time.year,
+                        month=display_time.month,
+                        day=display_time.day,
+                        hour=0, minute=0,
+                        second=0, microsecond=0
+                    )
+                    time_filter_start = time_filter_start - msc_timedelta
+                    time_filter_end = time_filter_start + datetime.timedelta(hours=24)
+                    appointment_times = session.query(СonsultationAppointmentTime)
+                    appointment_times = appointment_times.filter(
+                        time_filter_start <= СonsultationAppointmentTime.appointment_time,
+                        СonsultationAppointmentTime.appointment_time < time_filter_end
+                    )
+                    date_status = strcontent.TEXT_APPOINTMENT_DATE_STATUS_NOT_OK
+                    if appointment_times.count() > 0:
+                        date_status = strcontent.TEXT_APPOINTMENT_DATE_STATUS_OK
+
+                    date_text = f"{date_status} 0{display_time.day}" if display_time.day < 10 else f"{date_status} {display_time.day}"
+                    date_text = f"{date_text}.0{display_time.month}" if display_time.month < 10 else f"{date_text}.{display_time.month}"
+
+                    button_text.append(f"{date_text}")
+                    callback_data = {
+                        'command': strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL,
+                        'action': 1,
+                        'subaction': 3,
+                        'date_msc': {
+                            'day': display_time.day,
+                            'month': display_time.month,
+                            'year': display_time.year
+                        }
+                    }
+                    keyboard_data_builder.add_callback_data(**callback_data)
+
+                    appointment_time = appointment_time + interval
+
+                keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL)
+
+                button_ids = keyboard_data_builder.build()
+                buttons = []
+                for i in range(len(button_text)):
+                    buttons.append(telebot.types.InlineKeyboardButton(button_text[i], callback_data=button_ids[i]))
+
+                markup = telebot.types.InlineKeyboardMarkup()
+                for row in get_keyboard_row_list(buttons, row_width=5):
+                    markup.row(*row)
+                markup.add(telebot.types.InlineKeyboardButton(strcontent.BUTTON_BACK, callback_data=button_ids[-1]))
+
+                text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_SELECT_DATE
                 bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
         else:
             markup = telebot.types.InlineKeyboardMarkup()
@@ -716,9 +862,9 @@ class AdminPanel:
                 message_text = f"{message_text}\n\n{result}"
                 session.commit()
 
-            notification_button_text = strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION_OFF
+            notification_button_text = f"{strcontent.TEXT_CONSULTATION_NOTIFICATION_STATUS_OFF} {strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION}"
             if user.role.admin.is_consultation_admin:
-                notification_button_text = strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION_ON
+                notification_button_text = f"{strcontent.TEXT_CONSULTATION_NOTIFICATION_STATUS_ON} {strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_NOTIFICATION}"
 
             buttons = [
                 strcontent.BUTTON_ADMIN_PANEL_CONSULTATION_TIME,
@@ -737,114 +883,73 @@ class AdminPanel:
             bot.edit_message_text(message_text, call.message.chat.id, call.message.id, reply_markup=markup)
 
     @staticmethod
-    def get_appointment_time(bot: Bot, message: telebot.types.Message, session: Session):
+    def get_appointment_time(bot: Bot, message: telebot.types.Message, session: Session, date_msc: dict):
         user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
 
         if user is None:
             bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
             return
         
-        if message.text == strcontent.BUTTON_CLOSE:
-            markup = telebot.types.ReplyKeyboardRemove()
-            text = strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES_CLOSED
-            bot.send_message(message.chat.id, text, reply_markup=markup)
-        else:
-            appointment_times = []
+        appointment_times = []
 
-            # Парсинг времени
-            for msc_time_text in message.text.split():
-                msc_time_text_splitted = msc_time_text.split(":")
+        # Парсинг времени
+        for msc_time_text in message.text.split():
+            msc_time_text_splitted = msc_time_text.split(":")
 
-                try:
-                    hour = int(msc_time_text_splitted[0])
-                    minute = int(msc_time_text_splitted[1])
+            try:
+                hour = int(msc_time_text_splitted[0])
+                minute = int(msc_time_text_splitted[1])
 
-                    if (0 <= hour and hour <= 23) and (0 <= minute and minute <= 59):
-                        appointment_times.append([hour, minute])
-                except:
-                    pass
-            
-            # Повторяем процедуру запроса времени если ни одно время не было спарсено
-            if len(appointment_times) == 0:
-                bot.send_message(message.chat.id, strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES)
-                bot.register_next_step_action(message.chat.id, message.from_user.id, AdminPanel.get_appointment_time)
-                return
-            
-            # Сортируем время по возврастанию
-            for i in range(len(appointment_times)):
-                for j in range(i, len(appointment_times)):
-                    if (appointment_times[i][0] > appointment_times[j][0]) or ((appointment_times[i][0] == appointment_times[j][0]) and (appointment_times[i][1] > appointment_times[j][1])):
-                        tmp = appointment_times[i]
-                        appointment_times[i] = appointment_times[j]
-                        appointment_times[j] = tmp
-            
-            # Формируем строку из времен
-            appointment_times_text = ""
-            for i in appointment_times:
-                hour = i[0]
-                minute = i[1]
-                hour_text = f"0{hour}" if hour < 10 else str(hour)
-                minute_text = f"0{minute}" if minute < 10 else str(minute)
-                appointment_times_text = f"{hour_text}:{minute_text}" if appointment_times_text == "" else f"{appointment_times_text} {hour_text}:{minute_text}"
+                if (0 <= hour and hour <= 23) and (0 <= minute and minute <= 59):
+                    appointment_times.append([hour, minute])
+            except:
+                pass
 
-            # Преобразуем время в UTC
-            for i in range(len(appointment_times)):
-                appointment_times[i][0] -= 3
-                if appointment_times[i][0] < 0:
-                    appointment_times[i][0] += 24
-
-            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONFIRM))
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
-            
-            text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGING_INFO.format(appointment_times=appointment_times_text)
-            bot.send_message(message.chat.id, text, reply_markup=markup)
-            bot.register_next_step_action(message.chat.id, message.from_user.id, AdminPanel.set_appointment_time, appointment_times=appointment_times)
-
-    @staticmethod
-    def set_appointment_time(bot: Bot, message: telebot.types.Message, session: Session, appointment_times):
-        user = session.query(User).filter_by(tg_user_id=message.from_user.id).first()
-
-        if user is None:
-            bot.send_message(message.chat.id, strcontent.MESSAGE_NEED_REGISTRATION)
+        # Дата по МСК
+        date_msc_day = date_msc['day']
+        date_msc_month = date_msc['month']
+        date_text = f"0{date_msc_day}" if date_msc_day < 10 else f"{date_msc_day}"
+        date_text = f"{date_text}.0{date_msc_month}" if date_msc_month < 10 else f"{date_text}.{date_msc_month}"
+        
+        # Повторяем процедуру запроса времени если ни одно время не было спарсено
+        if len(appointment_times) == 0:
+            text = strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES.format(date=date_text)
+            bot.send_message(message.chat.id, text)
+            bot.register_next_step_action(message.chat.id, message.from_user.id, AdminPanel.get_appointment_time, date_msc=date_msc)
             return
         
-        if message.text == strcontent.BUTTON_CONFIRM:
-            session.query(СonsultationAppointmentTime).delete()
-            for i in appointment_times:
-                cat = СonsultationAppointmentTime(i[0], i[1])
-                session.add(cat)
-            session.commit()
-
-            markup = telebot.types.ReplyKeyboardRemove()
-            bot.send_message(message.chat.id, strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGED, reply_markup=markup)
-        elif message.text == strcontent.BUTTON_CANCEL:
-            markup = telebot.types.ReplyKeyboardRemove()
-            bot.send_message(message.chat.id, strcontent.MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES_CLOSED, reply_markup=markup)
-        else:
-            # Преобразуем время в MSC
-            appointment_times_msc = []
-            for i in range(len(appointment_times)):
-                appointment_times_msc.append([0, 0])
-                appointment_times_msc[-1][0] = appointment_times[i][0] + 3
-                appointment_times_msc[-1][1] = appointment_times[i][1]
-                if appointment_times_msc[-1][0] > 23:
-                    appointment_times_msc[-1][0] -= 24
-
-            # Формируем строку из времен
-            appointment_times_msc_text = ""
-            for i in appointment_times_msc:
-                hour = i[0]
-                minute = i[1]
-                hour_text = f"0{hour}" if hour < 10 else str(hour)
-                minute_text = f"0{minute}" if minute < 10 else str(minute)
-                appointment_times_msc_text = f"{hour_text}:{minute_text}" if appointment_times_msc_text == "" else f"{appointment_times_msc_text} {hour_text}:{minute_text}"
-
-            markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CONFIRM))
-            markup.add(telebot.types.KeyboardButton(strcontent.BUTTON_CANCEL))
-            text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGING_INFO.format(appointment_times=appointment_times_msc_text)
-            bot.send_message(message.chat.id, text, reply_markup=markup)
-            bot.register_next_step_action(message.chat.id, message.from_user.id, AdminPanel.set_appointment_time, appointment_times=appointment_times)
+        # Сортируем время по возврастанию
+        for i in range(len(appointment_times)):
+            for j in range(i, len(appointment_times)):
+                if (appointment_times[i][0] > appointment_times[j][0]) or ((appointment_times[i][0] == appointment_times[j][0]) and (appointment_times[i][1] > appointment_times[j][1])):
+                    tmp = appointment_times[i]
+                    appointment_times[i] = appointment_times[j]
+                    appointment_times[j] = tmp
         
+        # Формируем строку из времен
+        appointment_times_text = ""
+        for i in appointment_times:
+            hour = i[0]
+            minute = i[1]
+            hour_text = f"0{hour}" if hour < 10 else str(hour)
+            minute_text = f"0{minute}" if minute < 10 else str(minute)
+            appointment_times_text = f"{hour_text}:{minute_text}" if appointment_times_text == "" else f"{appointment_times_text} {hour_text}:{minute_text}"
 
+        markup = telebot.types.InlineKeyboardMarkup()
+        keyboard_data_builder = InlineKeyboardDataBuilder(session)
+
+        buttons = [
+            strcontent.BUTTON_CONFIRM,
+            strcontent.BUTTON_BACK
+        ]
+
+        keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1, subaction=2, date_msc=date_msc, appointment_times_msc=appointment_times)
+        keyboard_data_builder.add_callback_data(command=strcontent.COMMAND_CALLBACK_QUERY_ADMIN_PANEL, action=1, subaction=1, date_msc=date_msc)
+
+        button_ids = keyboard_data_builder.build()
+        for i in range(len(buttons)):
+            markup.add(telebot.types.InlineKeyboardButton(buttons[i], callback_data=button_ids[i]))
+        
+        text = strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_INFO.format(appointment_times=appointment_times_text, date=date_text)
+        text = f"{text}\n\n{strcontent.MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGING_CONFIRMATION}"
+        bot.send_message(message.chat.id, text, reply_markup=markup)

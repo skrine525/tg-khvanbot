@@ -64,13 +64,12 @@ class UserRole(Base):
     __tablename__ = 'user_roles'
 
     # Константы
-    ROLE_TEACHER = 't'
-    ROLE_ADMIN = 'a'
+    ROLE_ADMIN = 'admin'
 
     # Столбцы
     user_role_id = Column(BigInteger, primary_key=True)                                     # Идентификатор роли пользователя
     user_id = Column(BigInteger, ForeignKey("users.user_id"), nullable=False, unique=True)  # Идентификатор пользователя
-    role = Column(VARCHAR(1), nullable=False)                                               # Роль пользователя
+    role = Column(VARCHAR(10), nullable=False)                                              # Роль пользователя
     acquisition_time = Column(TIMESTAMP, nullable=False, default=datetime.datetime.utcnow)  # Временная метка получения роли
 
     # Отношения
@@ -84,10 +83,6 @@ class UserRole(Base):
     # Преобразование в строку
     def __repr__(self):
         return f"<UserRole({self.user_role_id}, {self.user_id}, '{self.role}')>"
-    
-    # Проверка пользователя на роль Учитель
-    def is_teacher(self):
-        return (self.role == UserRole.ROLE_TEACHER)
     
     # Проверка пользователя на роль Администратор
     def is_admin(self):
@@ -125,11 +120,11 @@ class Consultation(Base):
     lang_level = Column(VARCHAR(50), nullable=False)                                        # Анкета: Уровень языка
     hsk_exam = Column(VARCHAR(100), nullable=False)                                         # Анкета: Экзамен HSK
     purpose = Column(VARCHAR(100), nullable=False)                                          # Анкета: Цель изучения
-    way_now = Column(VARCHAR(50), nullable=False)                                           # Анкета: Способ изучения сейчас
-    consultation_time = Column(TIMESTAMP, nullable=False)                                   # Анкета: Время консультации
+    way_now = Column(VARCHAR(50), nullable=False)                                           # Анкета: Способ изучения сейчас                               # Анкета: Время консультации
 
     # Отношения
     notification = relationship("ConsultationNotification", backref="consultation", uselist=False, cascade="all,delete")
+    appointment_time = relationship("СonsultationAppointmentTime", backref="consultation", uselist=False)
 
     # Конструктор
     def __init__(self, user_id: int, age: int, phone_number: str, lang_level: str, hsk_exam: str, purpose: str, way_now: str, consultation_time: datetime.datetime):
@@ -172,15 +167,14 @@ class СonsultationAppointmentTime(Base):
     __tablename__ = 'consultation_appointment_times'
 
     # Столбцы
-    cat_id = Column(BigInteger, primary_key=True)                       # Идентификатор времени приёма на консультацию
-    utc_hour = Column(SmallInteger, nullable=False)                     # Час в UTC
-    utc_minute = Column(SmallInteger, nullable=False)                   # Минута в UTC
+    cat_id = Column(BigInteger, primary_key=True)                                                                                           # Идентификатор времени приёма на консультацию
+    consultation_id = Column(BigInteger, ForeignKey("consultations.consultation_id", ondelete="SET NULL"), unique=True, nullable=True)      # Идентификатор консультации
+    appointment_time = Column(TIMESTAMP, nullable=False)                                                                                    # Время проведения консультации
 
     # Конструктор
-    def __init__(self, utc_hour: int, utc_minute: int):
-        self.utc_hour = utc_hour
-        self.utc_minute = utc_minute
+    def __init__(self, appointment_time: datetime.datetime):
+        self.appointment_time = appointment_time
 
     # Преобразование в строку
     def __repr__(self):
-        return f"<СonsultationAppointmentTime({self.cat_id}, {self.utc_hour}, {self.utc_minute})>"
+        return f"<СonsultationAppointmentTime({self.cat_id}, {self.consultation_id}, '{self.appointment_time}')>"

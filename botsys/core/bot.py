@@ -128,7 +128,7 @@ class Bot(telebot.TeleBot):
     # Обработчик callback запросов
     def __callback_query_handler(self, call: telebot.types.CallbackQuery):
         session = Database.make_session()
-        button = session.query(KeyboardButton).filter_by(button_id=call.data).first()
+        button = session.get(KeyboardButton, call.data)
 
         if button is None:
             self.edit_message_text(strcontent.MESSAGE_CONTENT_NOT_AVAILABLE, call.message.chat.id, call.message.id)
