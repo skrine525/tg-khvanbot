@@ -500,8 +500,15 @@ class ConsultationCommand:
                 markup = telebot.types.ReplyKeyboardRemove()
                 bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_CANCELED, reply_markup=markup)
             else:
-                if len(message.text) == 10 and ConsultationCommand.__validate_phone_number(message.text):
-                    form["phone_number"] = f"7{message.text}"
+                if message.text.startswith("+") and len(message.text) > 11 and ConsultationCommand.__validate_phone_number(message.text[1:]):
+                    form["phone_number"] = message.text[1:]
+                    markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
+                    for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
+                        markup.row(*row)
+                    bot.send_message(message.chat.id, strcontent.MESSAGE_CONSULTATION_Q_LANG_LEVEL, reply_markup=markup)
+                    bot.register_next_step_action(message.chat.id, message.from_user.id, ConsultationCommand.get_answers_to_survey, form=form, q=1)
+                elif len(message.text) > 10 and ConsultationCommand.__validate_phone_number(message.text):
+                    form["phone_number"] = message.text
                     markup = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
                     for row in get_keyboard_row_list(ConsultationCommand.__get_answers(1)):
                         markup.row(*row)
