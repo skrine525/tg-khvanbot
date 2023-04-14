@@ -44,7 +44,7 @@ MESSAGE_ADMIN_PANEL_ENTER_CONSULTATION_APPOINTMENT_TIMES_CLOSED = "✅ Наст�
 MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_INFO = "📅 Дата: {date}\n⏰ Время приёма (МСК): {appointment_times}"
 MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGING_CONFIRMATION = "Все верно?"
 MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_CHANGED = "✅ Время приёма консультаций обновлено."
-MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_SELECT_DATE = "📅 Выберите дату, чтобы настроить время приёма консультаций."
+MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_SELECT_DATE = "📅 Выберите дату (МСК), чтобы настроить время приёма консультаций."
 MESSAGE_ADMIN_PANEL_CONSULTATION_APPOINTMENT_NOT_GIVEN = "❗️ Пусто"
 MESSAGE_CONSULTATION_NOTIFICATION_APPOINTMENT_NOT_GIVEN = "❗️ Не указано"
 
