@@ -168,7 +168,7 @@ class ConsultationAppointmentTime(Base):
     # Столбцы
     cat_id = Column(BigInteger, primary_key=True)                                                                                           # Идентификатор времени приёма на консультацию
     consultation_id = Column(BigInteger, ForeignKey("consultations.consultation_id", ondelete="SET NULL"), unique=True, nullable=True)      # Идентификатор консультации
-    appointment_time = Column(TIMESTAMP, nullable=False)                                                                                    # Время проведения консультации
+    appointment_time = Column(TIMESTAMP, unique=True, nullable=False)                                                                       # Время проведения консультации
 
     # Конструктор
     def __init__(self, appointment_time: datetime.datetime):
